@@ -32,6 +32,23 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
+    - name: Start Actual Server
+      run: |
+        docker run -d --name actual_server -p 12012:5006 actualbudget/actual-server:latest
+      env:
+        ACTUAL_PASSWORD: test
+
+    - name: Wait for Actual Server to be ready
+      run: |
+        for i in {1..30}; do
+          if curl -s http://localhost:12012/version; then
+            echo "Actual server is up!"
+            break
+          fi
+          echo "Waiting for actual server..."
+          sleep 2
+        done
+
     - name: Install Poetry
       uses: Gr1N/setup-poetry@v9
 
@@ -57,3 +74,9 @@ jobs:
         flags: unittests
         name: ${{ matrix.os }} - Python ${{ matrix.python-version }}
         token: ${{ secrets.CODECOV_TOKEN }}
+
+    - name: Stop Actual Server
+      if: always()
+      run: |
+        docker stop actual_server || true
+        docker rm actual_server || true

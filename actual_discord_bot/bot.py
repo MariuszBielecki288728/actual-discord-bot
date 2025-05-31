@@ -19,7 +19,7 @@ class ActualDiscordBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.target_channel: discord.TextChannel | None = None
 
-    @watch(path="actual_discord_bot", preload=True)
+    @watch(path="actual_discord_bot")
     async def on_ready(self) -> None:
         for guild in self.guilds:
             channel = discord.utils.get(guild.channels, name=self.channel_name)
