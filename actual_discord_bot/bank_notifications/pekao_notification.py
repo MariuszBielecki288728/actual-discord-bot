@@ -35,7 +35,7 @@ class PekaoNotification(BaseNotification):
         ),
         NotificationTemplate(
             re.compile(
-                r" Wykonano doładowanie telefonu .+ na kwotę (?P<amount>.+) PLN z konta.+, operator: (?P<payee>.+)\. Bank Pekao S\.A\.",
+                r"\s*Wykonano doładowanie telefonu .+ na kwotę (?P<amount>.+) PLN z konta.+, operator: (?P<payee>.+)\. Bank Pekao S\.A\.",
             ),
             TransactionType.PAYMENT,
         ),
