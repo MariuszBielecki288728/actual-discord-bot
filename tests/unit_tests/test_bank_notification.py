@@ -91,7 +91,7 @@ def test_from_message(message: str, expected_notification: PekaoNotification):
         (
             PekaoNotification(
                 title="Wykonano Przelew",
-                text=" Wykonano doładowanie telefonu 000 na kwotę 30,00 PLN z konta0000, operator: ATT. Bank Pekao S.A.",
+                text="Wykonano doładowanie telefonu 000 na kwotę 30,00 PLN z konta0000, operator: ATT. Bank Pekao S.A.",
                 bank="Pekao",
             ),
             ActualTransactionData(
