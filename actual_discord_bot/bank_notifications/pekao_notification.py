@@ -23,13 +23,19 @@ class PekaoNotification(BaseNotification):
         NotificationTemplate(
             re.compile(
                 r"Wykonano przelew na kwotę (?P<amount>.+) PLN z konta .+ "
-                r"na konto.+, odbiorca: (?P<payee>.+)\. Bank Pekao S.A.",
+                r"na konto.+, odbiorca: (?P<payee>.+)\. Bank Pekao S\.A\.",
             ),
             TransactionType.PAYMENT,
         ),
         NotificationTemplate(
             re.compile(
-                r"Zapłacono kwotę (?P<amount>.+) PLN kartą .+ dnia .+ w (?P<payee>.+)\. Bank Pekao S.A.",
+                r"Zapłacono kwotę (?P<amount>.+) PLN kartą .+ dnia .+ w (?P<payee>.+)\. Bank Pekao S\.A\.",
+            ),
+            TransactionType.PAYMENT,
+        ),
+        NotificationTemplate(
+            re.compile(
+                r"\s*Wykonano doładowanie telefonu .+ na kwotę (?P<amount>.+) PLN z konta.+, operator: (?P<payee>.+)\. Bank Pekao S\.A\.",
             ),
             TransactionType.PAYMENT,
         ),

@@ -9,10 +9,15 @@ def test_actual_connector(actual):
     connector = ActualConnector(
         ActualConfig(url="http://localhost:12012", password="test", file="TestBudget"),
     )
-    connector.save_transaction(
+    transaction = connector.save_transaction(
         ActualTransactionData(
             date=datetime.now(tz=UTC).date(),
             account="TestAccount",
             amount=10,
+            imported_payee="Żabka",
         ),
     )
+    assert (
+        transaction.amount == 10 * 100
+    )  # actual stores original amount multiplied by 100
+    assert transaction.imported_description == "Żabka"

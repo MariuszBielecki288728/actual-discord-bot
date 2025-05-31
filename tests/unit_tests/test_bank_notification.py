@@ -88,6 +88,32 @@ def test_from_message(message: str, expected_notification: PekaoNotification):
                 imported_payee="JANUSZ KORWIN-MIKKE",
             ),
         ),
+        (
+            PekaoNotification(
+                title="Wykonano Przelew",
+                text="Wykonano doładowanie telefonu 000 na kwotę 30,00 PLN z konta0000, operator: ATT. Bank Pekao S.A.",
+                bank="Pekao",
+            ),
+            ActualTransactionData(
+                date=datetime.now(tz=UTC).date(),
+                account="Pekao",
+                amount=-Decimal("30.00"),
+                imported_payee="ATT",
+            ),
+        ),
+        (
+            PekaoNotification(
+                title="Wykonano Przelew",
+                text=" Wykonano doładowanie telefonu 000 na kwotę 30,00 PLN z konta0000, operator: ATT. Bank Pekao S.A.",
+                bank="Pekao",
+            ),
+            ActualTransactionData(
+                date=datetime.now(tz=UTC).date(),
+                account="Pekao",
+                amount=-Decimal("30.00"),
+                imported_payee="ATT",
+            ),
+        ),
     ],
 )
 def test_to_transaction(
