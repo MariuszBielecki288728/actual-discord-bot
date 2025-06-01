@@ -196,7 +196,7 @@ Timestamp: 1.727111551661E9"""
 async def test_handle_message_adds_reaction_on_success(bot):
     message = AsyncMock(spec=discord.Message)
 
-    with patch.object(bot, "create_actual_transaction", return_value=True):
+    with patch.object(bot, "create_actual_transaction", new=AsyncMock(return_value=True)):
         await bot.handle_message(message)
 
         message.add_reaction.assert_called_once_with("✅")
