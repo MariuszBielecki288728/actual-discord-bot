@@ -85,12 +85,7 @@ Run the bot:
 python -m actual_discord_bot.bot
 ```
 
-or if you are using Docker:
-
-```bash
-docker-compose up bot
-```
-
+or if you are using Docker, refer to the [Using Docker](#using-docker) section for instructions.
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
