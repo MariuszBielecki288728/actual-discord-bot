@@ -2,25 +2,28 @@
 
 [[package]]
 name = "actualpy"
-version = "0.7.0"
+version = "0.12.1"
 description = "Implementation of the Actual API to interact with Actual over Python."
 optional = false
-python-versions = "*"
+python-versions = ">=3.9.0"
 groups = ["main"]
 files = [
-    {file = "actualpy-0.7.0-py3-none-any.whl", hash = "sha256:7060c0f3ec6ccee776534e98918137530ca9d8663b15935b21ee6ad3c2ff26d0"},
-    {file = "actualpy-0.7.0.tar.gz", hash = "sha256:99d9c641db531e6b2bb7d8f4df5c2db550d23c37745f2eec92b2052e4d4afaef"},
+    {file = "actualpy-0.12.1-py3-none-any.whl", hash = "sha256:0159134b10d5ef8aef39408a4ebb03444dc924d1d790e6a9f28413e6698a3b93"},
+    {file = "actualpy-0.12.1.tar.gz", hash = "sha256:c0b4c10c684c7bf6bc951bc8ad7e0a33494df8f1ea86101402aae8e688d41f5b"},
 ]
 
 [package.dependencies]
-cryptography = "*"
-proto-plus = "*"
-python-dateutil = "*"
-requests = "*"
-sqlmodel = "*"
+cryptography = ">=42"
+proto-plus = ">=1"
+protobuf = ">=4"
+pydantic = ">=2,<3"
+python-dateutil = ">=2.9.0"
+requests = ">=2"
+sqlalchemy = ">=2"
+sqlmodel = ">=0.0.18"
 
 [package.extras]
-cli = ["pyyaml", "rich", "typer"]
+cli = ["pyyaml (>=6)", "rich (>=13)", "typer (>=0.12.0)"]
 
 [[package]]
 name = "aiohappyeyeballs"
@@ -1840,4 +1843,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13"
-content-hash = "1cc429dcbfcf29c5b49ced5263abcb499531544e9a5ee75e91d703a5ba251973"
+content-hash = "982c9d6148b40d5151e7b984f8125cfe751b9823b85bb807842f2c8b8c2dc782"
