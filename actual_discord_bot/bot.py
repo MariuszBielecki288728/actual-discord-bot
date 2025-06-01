@@ -4,14 +4,22 @@ import discord
 from cogwatch import watch
 from discord.ext import commands
 
-from actual_discord_bot.config import DiscordConfig
+from actual_discord_bot.actual_connector import ActualConnector
+from actual_discord_bot.bank_notifications import PekaoNotification
+from actual_discord_bot.config import ActualConfig, DiscordConfig
+from actual_discord_bot.errors import ParseNotificationError
 
 REACTION_EMOJI = "✅"
 
 
 class ActualDiscordBot(commands.Bot):
-    def __init__(self, config: DiscordConfig) -> None:
+    def __init__(
+        self,
+        config: DiscordConfig,
+        actual_connector: ActualConnector,
+    ) -> None:
         self.channel_name = config.bank_notification_channel
+        self.actual_connector = actual_connector
 
         intents = discord.Intents.default()
         intents.message_content = True
@@ -29,11 +37,27 @@ class ActualDiscordBot(commands.Bot):
         if not self.target_channel:
             print(f"Warning: Could not find channel '{self.channel_name}'")
 
-    async def process_message(self, message: discord.Message) -> bool:
-        pass
+    async def create_actual_transaction(self, message: discord.Message) -> bool:
+        try:
+            notification = PekaoNotification.from_message(message.content)
+            transaction_data = notification.to_transaction()
+            self.actual_connector.save_transaction(transaction_data)
+        except ParseNotificationError:
+            print(
+                f"ParseNotificationError: Could not parse message {message.id} with content: {message.content}",
+            )
+            return False
+        except Exception as e:  # noqa: BLE001
+            print(f"Exception occurred while processing message {message.id}: {e}")
+            print(
+                f"Error processing message {message.id} with content {message.content}: {e}",
+            )
+            return False
+        else:
+            return True
 
     async def handle_message(self, message: discord.Message) -> None:
-        if await self.process_message(message):
+        if await self.create_actual_transaction(message):
             await message.add_reaction(REACTION_EMOJI)
 
     async def on_message(self, message: discord.Message) -> None:
@@ -64,8 +88,10 @@ class ActualDiscordBot(commands.Bot):
 
 async def main() -> None:
     discord_config = DiscordConfig.from_environ()
+    actual_config = ActualConfig.from_environ()
 
-    client = ActualDiscordBot(discord_config)
+    actual_connector = ActualConnector(actual_config)
+    client = ActualDiscordBot(discord_config, actual_connector)
     await client.start(discord_config.token)
 
 
