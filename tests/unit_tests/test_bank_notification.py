@@ -52,7 +52,7 @@ def test_from_message(message: str, expected_notification: PekaoNotification):
         (
             PekaoNotification(
                 title="Transakcja kartą",
-                text="Zapłacono kwotę 90,45 PLN kartą *1000 dnia 23-09-2021 godz. 19:12:27 w CARREFOUR POL. Bank Pekao S.A.",
+                text="Zapłacono kwotę 90,45 PLN kartą *1000 dnia 23-09-2024 godz. 19:12:27 w CARREFOUR POL. Bank Pekao S.A.",
                 bank="Pekao",
             ),
             ActualTransactionData(
