@@ -11,7 +11,7 @@ services:
     command: python -u actual_discord_bot/bot.py
 
   actual_server:
-    image: docker.io/actualbudget/actual-server:latest
+    image: docker.io/actualbudget/actual-server:25.4.0
     ports:
       - '12012:5006'
     volumes:

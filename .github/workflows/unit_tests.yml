@@ -34,7 +34,7 @@ jobs:
 
     - name: Start Actual Server
       run: |
-        docker run -d --name actual_server -p 12012:5006 actualbudget/actual-server:latest
+        docker run -d --name actual_server -p 12012:5006 actualbudget/actual-server:25.4.0
       env:
         ACTUAL_PASSWORD: test
 

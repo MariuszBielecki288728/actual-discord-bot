@@ -1,10 +1,11 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
 from actual_discord_bot import ActualDiscordBot
 from actual_discord_bot.config import DiscordConfig
+from actual_discord_bot.errors import ParseNotificationError
 
 
 @pytest.fixture
@@ -13,7 +14,8 @@ def bot():
         token="token",
         bank_notification_channel="bank-notifications",
     )
-    return ActualDiscordBot(config)
+    mock_actual_connector = MagicMock()
+    return ActualDiscordBot(config, mock_actual_connector)
 
 
 @pytest.fixture
@@ -130,3 +132,81 @@ async def test_catch_up_processes_message_with_different_reaction(
         # Assert
         mock_handle.assert_called_once_with(message_with_different_reaction)
         ctx.send.assert_called_once_with("Catch-up complete. Processed 1 messages.")
+
+
+@pytest.mark.asyncio
+async def test_create_actual_transaction_success(bot):
+    message = AsyncMock(spec=discord.Message)
+    message.content = """Title: Transakcja kartą
+Text: Zapłacono kwotę 90,45 PLN kartą *1000 dnia 23-09-2024 godz. 19:12:27 w TEST. Bank Pekao S.A.
+Timestamp: 1.727111551661E9"""
+
+    mock_notification = MagicMock()
+    mock_transaction_data = MagicMock()
+    mock_notification.to_transaction.return_value = mock_transaction_data
+
+    with patch("actual_discord_bot.bot.PekaoNotification") as mock_pekao_class:
+        mock_pekao_class.from_message.return_value = mock_notification
+        with patch.object(bot.actual_connector, "save_transaction") as mock_save:
+            result = await bot.create_actual_transaction(message)
+
+            assert result is True
+            mock_pekao_class.from_message.assert_called_once_with(message.content)
+            mock_notification.to_transaction.assert_called_once()
+            mock_save.assert_called_once_with(mock_transaction_data)
+
+
+@pytest.mark.asyncio
+async def test_create_actual_transaction_parse_error(bot):
+    message = AsyncMock(spec=discord.Message)
+    message.content = "Invalid message format"
+
+    with patch("actual_discord_bot.bot.PekaoNotification") as mock_pekao_class:
+        mock_pekao_class.from_message.side_effect = ParseNotificationError("test error")
+
+        result = await bot.create_actual_transaction(message)
+
+        assert result is False
+        mock_pekao_class.from_message.assert_called_once_with(message.content)
+
+
+@pytest.mark.asyncio
+async def test_create_actual_transaction_save_error(bot):
+    message = AsyncMock(spec=discord.Message)
+    message.content = """Title: Transakcja kartą
+Text: Zapłacono kwotę 90,45 PLN kartą *1000 dnia 23-09-2024 godz. 19:12:27 w TEST. Bank Pekao S.A.
+Timestamp: 1.727111551661E9"""
+
+    mock_notification = MagicMock()
+    mock_transaction_data = MagicMock()
+    mock_notification.to_transaction.return_value = mock_transaction_data
+
+    with patch("actual_discord_bot.bot.PekaoNotification") as mock_pekao_class:
+        mock_pekao_class.from_message.return_value = mock_notification
+        with patch.object(bot.actual_connector, "save_transaction") as mock_save:
+            mock_save.side_effect = Exception("Database error")
+
+            result = await bot.create_actual_transaction(message)
+
+            assert result is False
+            mock_save.assert_called_once_with(mock_transaction_data)
+
+
+@pytest.mark.asyncio
+async def test_handle_message_adds_reaction_on_success(bot):
+    message = AsyncMock(spec=discord.Message)
+
+    with patch.object(bot, "create_actual_transaction", return_value=True):
+        await bot.handle_message(message)
+
+        message.add_reaction.assert_called_once_with("✅")
+
+
+@pytest.mark.asyncio
+async def test_handle_message_no_reaction_on_failure(bot):
+    message = AsyncMock(spec=discord.Message)
+
+    with patch.object(bot, "create_actual_transaction", return_value=False):
+        await bot.handle_message(message)
+
+        message.add_reaction.assert_not_called()
