@@ -86,7 +86,7 @@ jobs:
           includeInvalidCommits: true
 
       - name: Create Release
-        uses: ncipollo/release-action@v1.18.0
+        uses: ncipollo/release-action@v1.19.1
         with:
           allowUpdates: true
           draft: true
