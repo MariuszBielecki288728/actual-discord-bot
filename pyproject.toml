@@ -53,7 +53,7 @@ audioop-lts = "*"
 
 discord-py = "^2.4.0"
 cogwatch = "^3.3.1"
-actualpy = ">=0.7,<0.16"
+actualpy = ">=0.7,<0.17"
 environ-config = "^24.1.0"
 babel="^2.16.0"
 
