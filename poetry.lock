@@ -2,14 +2,14 @@
 
 [[package]]
 name = "actualpy"
-version = "0.19.0"
+version = "0.20.0"
 description = "Implementation of the Actual API to interact with Actual over Python."
 optional = false
 python-versions = ">=3.10.0"
 groups = ["main"]
 files = [
-    {file = "actualpy-0.19.0-py3-none-any.whl", hash = "sha256:cda15436d76a7b9dd916d223295f28214f583394eadb8a65df84c6a515807d8e"},
-    {file = "actualpy-0.19.0.tar.gz", hash = "sha256:75030a7db7ce0f6536d817235aa294ed7302c7faaeba62d23c91570e0ed66914"},
+    {file = "actualpy-0.20.0-py3-none-any.whl", hash = "sha256:dfc215e487d03af22d205e74f735a42e02ae7b9ee76219fa58bf02867551989d"},
+    {file = "actualpy-0.20.0.tar.gz", hash = "sha256:c1722c19b2dc592a0e9074446a879ae6b144237286a3fea07442d12c3ccb4b86"},
 ]
 
 [package.dependencies]
@@ -2048,4 +2048,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13"
-content-hash = "295be6fa4d2d6fcd0cc437e8b81d6ba3b504c8ae849a7822db0e130654eecc1b"
+content-hash = "c553af9b0312f18dfc8f0b5bb6707faaeed522dc939c11dd113291a3a7e16058"
