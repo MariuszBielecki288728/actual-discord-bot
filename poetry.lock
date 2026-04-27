@@ -2,14 +2,14 @@
 
 [[package]]
 name = "actualpy"
-version = "0.22.0"
+version = "0.22.1"
 description = "Implementation of the Actual API to interact with Actual over Python."
 optional = false
 python-versions = ">=3.10.0"
 groups = ["main"]
 files = [
-    {file = "actualpy-0.22.0-py3-none-any.whl", hash = "sha256:2079fd43cbbd4dd61dacbef48e068dfc7d2c1428121db20a2d89e1eac786d32a"},
-    {file = "actualpy-0.22.0.tar.gz", hash = "sha256:021be24c328699f8bbbe4365eea72f57cb031202fc98ce44ef03ea5b15f189fe"},
+    {file = "actualpy-0.22.1-py3-none-any.whl", hash = "sha256:7c30190af000cf53dffc2c09bd60252d2b9b1ab6e778ea822d747365bc21fa02"},
+    {file = "actualpy-0.22.1.tar.gz", hash = "sha256:acd3256a16dea3b087ea22958368d789077c5c4c7b14068bbb27b0be457bf0c9"},
 ]
 
 [package.dependencies]
@@ -1879,25 +1879,11 @@ testing = ["devpi-process", "mypy ; platform_python_implementation == \"CPython\
 
 [[package]]
 name = "typing-extensions"
-version = "4.12.2"
-description = "Backported and Experimental Type Hints for Python 3.8+"
-optional = false
-python-versions = ">=3.8"
-groups = ["main", "dev"]
-markers = "python_version < \"3.15\""
-files = [
-    {file = "typing_extensions-4.12.2-py3-none-any.whl", hash = "sha256:04e5ca0351e0f3f85c6853954072df659d0d13fac324d0072316b67d7794700d"},
-    {file = "typing_extensions-4.12.2.tar.gz", hash = "sha256:1a7ead55c7e559dd4dee8856e3a88b41225abfe1ce8df57b7c13915fe121ffb8"},
-]
-
-[[package]]
-name = "typing-extensions"
 version = "4.15.0"
 description = "Backported and Experimental Type Hints for Python 3.9+"
 optional = false
 python-versions = ">=3.9"
 groups = ["main", "dev"]
-markers = "python_version >= \"3.15\""
 files = [
     {file = "typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548"},
     {file = "typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466"},
