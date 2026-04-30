@@ -53,7 +53,7 @@ audioop-lts = "*"
 
 discord-py = "^2.4.0"
 cogwatch = "^3.3.1"
-actualpy = ">=0.7,<0.23"
+actualpy = ">=0.7,<0.24"
 environ-config = "^24.1.0"
 babel="^2.16.0"
 
@@ -104,7 +104,7 @@ testpaths = [
 
 [tool.ruff]
 show-fixes = true
-target-version = "py312"
+target-version = "py313"
 
 [tool.ruff.lint.pycodestyle]
 max-line-length = 120
@@ -166,10 +166,10 @@ select = [
 ignore = [
     "D203",    # One blank line before class docstring
     "D212",    # Multi-line summary first line
-    "ANN101",  # Self not typed
+    "COM812",  # Missing trailing comma (conflicts with formatter)
+    "ISC001",  # Implicit string concatenation (conflicts with formatter)
     "T201",    # Prints not allowed
     "EM102",   # No f-string literals in exceptions
-    "ANN102"   # `cls` type annotation
 ]
 
 

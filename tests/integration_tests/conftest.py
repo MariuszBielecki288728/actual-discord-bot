@@ -1,12 +1,16 @@
+import os
+
 import pytest
 from actual import Actual
 from actual.queries import create_account
+
+ACTUAL_TEST_URL = os.environ.get("ACTUAL_TEST_URL", "http://localhost:12012")
 
 
 @pytest.fixture
 def actual():
     with Actual(
-        base_url="http://localhost:12012",
+        base_url=ACTUAL_TEST_URL,
         password="test",
         bootstrap=True,
     ) as actual:
