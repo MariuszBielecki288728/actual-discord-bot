@@ -5,15 +5,36 @@ services:
       - .:/app
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - ACTUAL_URL=http://actual_server:5006
       - ACTUAL_PASSWORD=${ACTUAL_PASSWORD}
-      - DISCORD_BANK_NOTIFICATION_CHANNEL=bank_notifications
+      - ACTUAL_FILE=${ACTUAL_FILE}
+      - DISCORD_BANK_NOTIFICATION_CHANNEL=${DISCORD_BANK_NOTIFICATION_CHANNEL}
 
     command: python -u actual_discord_bot/bot.py
 
   actual_server:
-    image: docker.io/actualbudget/actual-server:25.4.0
+    image: docker.io/actualbudget/actual-server:26.4.0
     ports:
       - '12012:5006'
     volumes:
       - ./actual-data:/data
     restart: unless-stopped
+
+  test_actual_server:
+    image: docker.io/actualbudget/actual-server:26.4.0
+    ports:
+      - '12013:5006'
+    profiles:
+      - testing
+
+  integration_tests:
+    build:
+      context: .
+      target: testing
+    depends_on:
+      - test_actual_server
+    environment:
+      - ACTUAL_TEST_URL=http://test_actual_server:5006
+    command: pytest tests/integration_tests/ -v
+    profiles:
+      - testing

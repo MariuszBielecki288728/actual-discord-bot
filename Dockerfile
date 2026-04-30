@@ -21,13 +21,13 @@ RUN apt-get update \
     curl \
     build-essential
 
-ENV POETRY_VERSION=1.8.3
+ENV POETRY_VERSION=2.3.4
 RUN curl -sSL https://install.python-poetry.org | python3 -
 
 WORKDIR $PYSETUP_PATH
 COPY . .
 
-RUN poetry install --no-dev
+RUN poetry install --only main
 RUN poetry build
 
 
@@ -44,6 +44,14 @@ WORKDIR /app
 COPY . .
 
 CMD ["actual_discord_bot/bot.py"]
+
+
+FROM development AS testing
+
+WORKDIR $PYSETUP_PATH
+RUN poetry install --with tests
+
+WORKDIR /app
 
 
 FROM python-base AS production

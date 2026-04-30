@@ -1,13 +1,16 @@
+import os
 from datetime import UTC, datetime
 
 from actual_discord_bot.actual_connector import ActualConnector
 from actual_discord_bot.config import ActualConfig
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
 
+ACTUAL_TEST_URL = os.environ.get("ACTUAL_TEST_URL", "http://localhost:12012")
+
 
 def test_actual_connector(actual):
     connector = ActualConnector(
-        ActualConfig(url="http://localhost:12012", password="test", file="TestBudget"),
+        ActualConfig(url=ACTUAL_TEST_URL, password="test", file="TestBudget"),
     )
     transaction = connector.save_transaction(
         ActualTransactionData(
