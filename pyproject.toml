@@ -177,6 +177,7 @@ ignore = [
     "ISC001",  # Implicit string concatenation (conflicts with formatter)
     "T201",    # Prints not allowed
     "EM102",   # No f-string literals in exceptions
+    "FURB157", # Decimal string literals are intentional (float conversion loses precision)
 ]
 
 

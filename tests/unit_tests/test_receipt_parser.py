@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from actual_discord_bot.receipts.handler import ReceiptHandler
 from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
 from actual_discord_bot.receipts.parser import ReceiptParser
 
@@ -233,7 +234,6 @@ class TestTotalValidation:
             ],
             total=Decimal("15.00"),
         )
-        from actual_discord_bot.receipts.handler import ReceiptHandler
 
         is_valid, diff = ReceiptHandler.validate_receipt(receipt)
         assert is_valid is True
@@ -248,7 +248,6 @@ class TestTotalValidation:
             ],
             total=Decimal("15.00"),
         )
-        from actual_discord_bot.receipts.handler import ReceiptHandler
 
         is_valid, diff = ReceiptHandler.validate_receipt(receipt)
         assert is_valid is True
@@ -262,7 +261,6 @@ class TestTotalValidation:
             ],
             total=Decimal("15.00"),
         )
-        from actual_discord_bot.receipts.handler import ReceiptHandler
 
         is_valid, diff = ReceiptHandler.validate_receipt(receipt)
         assert is_valid is False

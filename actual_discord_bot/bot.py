@@ -14,6 +14,7 @@ from actual_discord_bot.receipts.handler import (
     ReceiptHandler,
     ReceiptProcessingError,
 )
+from actual_discord_bot.receipts.ocr_provider import OCRConfig, create_ocr_provider
 
 REACTION_EMOJI = "✅"
 REACTION_ERROR = "❌"
@@ -196,12 +197,6 @@ async def main() -> None:
 
     receipt_handler = None
     if discord_config.receipt_channel:
-        from actual_discord_bot.receipts.handler import ReceiptHandler
-        from actual_discord_bot.receipts.ocr_provider import (
-            OCRConfig,
-            create_ocr_provider,
-        )
-
         ocr_config = OCRConfig.from_environ()
         ocr_provider = create_ocr_provider(ocr_config)
         receipt_handler = ReceiptHandler(ocr_provider=ocr_provider)
