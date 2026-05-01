@@ -56,6 +56,9 @@ cogwatch = "^3.3.1"
 actualpy = ">=0.7,<0.24"
 environ-config = "^24.1.0"
 babel="^2.16.0"
+Pillow = "^11.0"
+pytesseract = "^0.3"
+pdfplumber = "^0.11"
 
 
 [tool.poetry.group.dev.dependencies]
@@ -98,6 +101,10 @@ addopts = """
 --cov-report xml:tests/reports/coverage.xml \
 --ignore=docs/
 """
+markers = [
+    "ocr: tests requiring Tesseract OCR engine",
+    "slow: tests that take >5s (full OCR pipeline)",
+]
 testpaths = [
     "tests",
 ]
@@ -170,6 +177,7 @@ ignore = [
     "ISC001",  # Implicit string concatenation (conflicts with formatter)
     "T201",    # Prints not allowed
     "EM102",   # No f-string literals in exceptions
+    "FURB157", # Decimal string literals are intentional (float conversion loses precision)
 ]
 
 
@@ -186,7 +194,7 @@ max-complexity = 10
 [tool.ruff.lint.per-file-ignores]
 # https://beta.ruff.rs/docs/rules/
 "__init__.py" = ["F401","F403","F405",]
-"tests/*" = ["ANN", "ARG", "INP001", "S101", "S106"]
+"tests/*" = ["ANN", "ARG", "D", "INP001", "PLR2004", "PTH", "S101", "S106", "S108", "SIM117"]
 
 
 [tool.ruff.lint.pylint]

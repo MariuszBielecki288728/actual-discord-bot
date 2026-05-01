@@ -9,16 +9,6 @@ from actual_discord_bot.errors import ParseNotificationError
 
 
 @pytest.fixture
-def bot():
-    config = DiscordConfig(
-        token="token",
-        bank_notification_channel="bank-notifications",
-    )
-    mock_actual_connector = MagicMock()
-    return ActualDiscordBot(config, mock_actual_connector)
-
-
-@pytest.fixture
 def mock_channel():
     channel = AsyncMock(spec=discord.TextChannel)
     channel.name = "bank-notifications"
@@ -214,3 +204,100 @@ async def test_handle_message_no_reaction_on_failure(bot):
         await bot.handle_message(message)
 
         message.add_reaction.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_on_message_routes_to_receipt_channel():
+    """Test that messages in the receipt channel are routed to handle_receipt_message."""
+    config = DiscordConfig(
+        token="token",
+        bank_notification_channel="bank-notifications",
+        receipt_channel="receipts",
+    )
+    mock_actual_connector = MagicMock()
+    bot = ActualDiscordBot(config, mock_actual_connector)
+
+    mock_user = MagicMock()
+    mock_user.id = 123
+
+    # Set up receipt channel
+    receipt_channel = MagicMock(spec=discord.TextChannel)
+    receipt_channel.id = 999
+    bot.receipt_target_channel = receipt_channel
+
+    message = AsyncMock(spec=discord.Message)
+    message.author = MagicMock()
+    message.author.id = 456
+    message.channel = MagicMock()
+    message.channel.id = 999
+
+    with (
+        patch.object(
+            type(bot), "user", new_callable=lambda: property(lambda self: mock_user)
+        ),
+        patch.object(bot, "handle_receipt_message") as mock_receipt,
+    ):
+        await bot.on_message(message)
+        mock_receipt.assert_called_once_with(message)
+
+
+@pytest.mark.asyncio
+async def test_on_message_routes_to_bank_channel():
+    """Test that messages in the bank channel are routed to handle_message."""
+    config = DiscordConfig(
+        token="token",
+        bank_notification_channel="bank-notifications",
+        receipt_channel="receipts",
+    )
+    mock_actual_connector = MagicMock()
+    bot = ActualDiscordBot(config, mock_actual_connector)
+
+    mock_user = MagicMock()
+    mock_user.id = 123
+
+    # Set up bank channel
+    bank_channel = MagicMock(spec=discord.TextChannel)
+    bank_channel.id = 888
+    bot.target_channel = bank_channel
+
+    message = AsyncMock(spec=discord.Message)
+    message.author = MagicMock()
+    message.author.id = 456
+    message.channel = MagicMock()
+    message.channel.id = 888
+
+    with (
+        patch.object(
+            type(bot), "user", new_callable=lambda: property(lambda self: mock_user)
+        ),
+        patch.object(bot, "handle_message") as mock_bank,
+    ):
+        await bot.on_message(message)
+        mock_bank.assert_called_once_with(message)
+
+
+@pytest.mark.asyncio
+async def test_on_message_ignores_own_messages():
+    """Test that bot ignores its own messages."""
+    config = DiscordConfig(
+        token="token",
+        bank_notification_channel="bank-notifications",
+    )
+    mock_actual_connector = MagicMock()
+    bot = ActualDiscordBot(config, mock_actual_connector)
+
+    mock_user = MagicMock()
+
+    message = AsyncMock(spec=discord.Message)
+    message.author = mock_user  # Bot's own message
+
+    with (
+        patch.object(
+            type(bot), "user", new_callable=lambda: property(lambda self: mock_user)
+        ),
+        patch.object(bot, "handle_message") as mock_bank,
+        patch.object(bot, "handle_receipt_message") as mock_receipt,
+    ):
+        await bot.on_message(message)
+        mock_bank.assert_not_called()
+        mock_receipt.assert_not_called()

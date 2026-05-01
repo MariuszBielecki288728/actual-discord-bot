@@ -5,13 +5,15 @@ applyTo: '**/*.py'
 
 # Project: actual-discord-bot
 
-A Discord bot that creates Actual Budget transactions from bank push notifications forwarded via Android's Automate app.
+A Discord bot that creates Actual Budget transactions from bank push notifications forwarded via Android's Automate app, and from receipt photos/PDFs posted to a dedicated channel.
 
 ## Tech Stack
 
 - **Python 3.13** with **Poetry** for dependency management
 - **discord.py** for Discord integration
 - **actualpy** for Actual Budget API interaction
+- **Pillow** + **pytesseract** for image preprocessing and OCR
+- **pdfplumber** for PDF text extraction
 - **pytest** (async mode) for testing
 - **Ruff** for linting/formatting, **black** for code style
 - **Docker Compose** for deployment and integration tests
@@ -26,13 +28,22 @@ actual_discord_bot/           # Main package
 ├── dataclasses_definitions.py # Data models (ActualTransactionData)
 ├── enums.py                  # TransactionType enum
 ├── errors.py                 # Custom exceptions
-└── bank_notifications/       # Bank-specific notification parsers
-    ├── base_notification.py  # Base class with regex parsing
-    └── pekao_notification.py # Bank Pekao implementation
+├── bank_notifications/       # Bank-specific notification parsers
+│   ├── base_notification.py  # Base class with regex parsing
+│   └── pekao_notification.py # Bank Pekao implementation
+└── receipts/                 # Receipt parsing pipeline
+    ├── handler.py            # Orchestrates processing (image/PDF → parse → transaction)
+    ├── models.py             # ParsedReceipt, ReceiptItem dataclasses
+    ├── ocr_provider.py       # OCR abstraction (Tesseract, cloud providers)
+    ├── parser.py             # Receipt text parser (regex-based, multi-format)
+    ├── pdf_extractor.py      # PDF text extraction (pdfplumber)
+    ├── preprocessing.py      # Image preprocessing (grayscale, sharpen, binarize)
+    └── transaction.py        # Split transaction creation & deduplication
 
 tests/
 ├── unit_tests/               # Fast tests, no network/docker needed
-└── integration_tests/        # Run against real Actual server in Docker
+├── integration_tests/        # Run against real Actual server in Docker
+└── receipts/                 # Test receipt images and PDFs
 ```
 
 ## Coding Conventions
@@ -79,6 +90,9 @@ tests/
 - `cogwatch` — Hot-reload for development
 - `babel` — Polish locale number parsing
 - `environ-config` — Environment variable configuration
+- `Pillow` — Image preprocessing (grayscale, sharpen, binarize)
+- `pytesseract` — Tesseract OCR Python bindings (Polish language)
+- `pdfplumber` — PDF text extraction for digital receipts
 
 ## Common Commands
 
