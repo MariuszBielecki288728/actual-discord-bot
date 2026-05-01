@@ -8,7 +8,10 @@ services:
       - ACTUAL_URL=http://actual_server:5006
       - ACTUAL_PASSWORD=${ACTUAL_PASSWORD}
       - ACTUAL_FILE=${ACTUAL_FILE}
+      - ACTUAL_ACCOUNT=${ACTUAL_ACCOUNT:-Pekao}
       - DISCORD_BANK_NOTIFICATION_CHANNEL=${DISCORD_BANK_NOTIFICATION_CHANNEL}
+      - DISCORD_RECEIPT_CHANNEL=${DISCORD_RECEIPT_CHANNEL:-}
+      - OCR_PROVIDER=${OCR_PROVIDER:-tesseract}
 
     command: python -u actual_discord_bot/bot.py
 
