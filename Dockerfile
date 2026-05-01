@@ -19,7 +19,10 @@ FROM python-base AS builder-base
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
     curl \
-    build-essential
+    build-essential \
+    tesseract-ocr \
+    tesseract-ocr-pol \
+    libtesseract-dev
 
 ENV POETRY_VERSION=2.3.4
 RUN curl -sSL https://install.python-poetry.org | python3 -
@@ -32,6 +35,12 @@ RUN poetry build
 
 
 FROM python-base AS development
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+    tesseract-ocr \
+    tesseract-ocr-pol \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder-base $POETRY_HOME $POETRY_HOME
 COPY --from=builder-base $PYSETUP_PATH $PYSETUP_PATH
