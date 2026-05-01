@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 import environ
+import pytesseract
 from PIL import Image
 
 
@@ -20,8 +21,6 @@ class TesseractProvider(OCRProvider):
         self.psm = psm
 
     def extract_text(self, image: Image.Image) -> str:
-        import pytesseract
-
         config = f"--psm {self.psm}"
         return pytesseract.image_to_string(image, lang=self.lang, config=config)
 

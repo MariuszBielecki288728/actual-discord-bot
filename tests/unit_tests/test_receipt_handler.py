@@ -1,3 +1,6 @@
+import io
+import os
+import tempfile
 from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock
@@ -44,8 +47,6 @@ def handler(mock_ocr, mock_pdf_extractor):
 class TestReceiptHandlerProcessImage:
     def test_process_image_bytes_calls_ocr(self, handler, mock_ocr):
         fake_image = Image.new("RGB", (100, 100))
-        import io
-
         buf = io.BytesIO()
         fake_image.save(buf, format="PNG")
         image_bytes = buf.getvalue()
@@ -59,8 +60,6 @@ class TestReceiptHandlerProcessImage:
     def test_process_image_bytes_empty_ocr_raises(self, handler, mock_ocr):
         mock_ocr.extract_text.return_value = ""
         fake_image = Image.new("RGB", (100, 100))
-        import io
-
         buf = io.BytesIO()
         fake_image.save(buf, format="PNG")
 
@@ -73,8 +72,6 @@ class TestReceiptHandlerProcessImage:
             "Store\nPARAGON FISKALNY\nItem 1 x10,00 10,00B\nSUMA PLN 10,00\n"
         )
         fake_image = Image.new("RGB", (100, 100))
-        import io
-
         buf = io.BytesIO()
         fake_image.save(buf, format="PNG")
 
@@ -163,8 +160,6 @@ class TestReceiptHandlerProcessFile:
     """Test process_file with different file types."""
 
     def test_process_pdf_file(self, handler, mock_pdf_extractor):
-        import tempfile
-
         mock_pdf_extractor.extract_text.return_value = (
             "Store\nPARAGON FISKALNY\nItem 1 x5,00 5,00B\nSUMA PLN 5,00\n"
         )
@@ -175,10 +170,6 @@ class TestReceiptHandlerProcessFile:
         mock_pdf_extractor.extract_text.assert_called_once()
 
     def test_process_image_file(self, handler, mock_ocr):
-        import tempfile
-
-        from PIL import Image
-
         with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as f:
             img = Image.new("RGB", (100, 100))
             img.save(f, format="JPEG")
@@ -189,8 +180,6 @@ class TestReceiptHandlerProcessFile:
             assert receipt.source == "photo"
             mock_ocr.extract_text.assert_called_once()
         finally:
-            import os
-
             os.unlink(tmp_path)
 
     def test_process_unsupported_file_raises(self, handler):
@@ -198,8 +187,6 @@ class TestReceiptHandlerProcessFile:
             handler.process_file("/tmp/receipt.docx")
 
     def test_process_pdf_empty_text_raises(self, handler, mock_pdf_extractor):
-        import tempfile
-
         mock_pdf_extractor.extract_text.return_value = ""
         with tempfile.NamedTemporaryFile(suffix=".pdf") as f:
             with pytest.raises(

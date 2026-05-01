@@ -7,6 +7,7 @@ import pytest
 from actual_discord_bot.actual_connector import ActualConnector
 from actual_discord_bot.config import ActualConfig
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
+from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
 
 
 @pytest.fixture
@@ -187,8 +188,6 @@ class TestSaveReceiptTransaction:
     def test_calls_create_receipt_split_transaction(
         self, connector, mock_actual_manager
     ):
-        from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
-
         receipt = ParsedReceipt(
             store_name="Kaufland",
             items=[
