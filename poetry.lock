@@ -2,14 +2,14 @@
 
 [[package]]
 name = "actualpy"
-version = "0.22.1"
+version = "0.22.2"
 description = "Implementation of the Actual API to interact with Actual over Python."
 optional = false
 python-versions = ">=3.10.0"
 groups = ["main"]
 files = [
-    {file = "actualpy-0.22.1-py3-none-any.whl", hash = "sha256:7c30190af000cf53dffc2c09bd60252d2b9b1ab6e778ea822d747365bc21fa02"},
-    {file = "actualpy-0.22.1.tar.gz", hash = "sha256:acd3256a16dea3b087ea22958368d789077c5c4c7b14068bbb27b0be457bf0c9"},
+    {file = "actualpy-0.22.2-py3-none-any.whl", hash = "sha256:c6ddc1f97e541a0e060e1d1d8ae0668accd2150e4048d5c2a8710df33613b132"},
+    {file = "actualpy-0.22.2.tar.gz", hash = "sha256:1898e4c94900e1d12d1a834286984e392f0a7d6bd74e005e864483910c7361e8"},
 ]
 
 [package.dependencies]
