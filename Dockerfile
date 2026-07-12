@@ -1,4 +1,4 @@
-FROM python:3.13-slim AS python-base
+FROM python:3.13.14-slim AS python-base
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -24,7 +24,7 @@ RUN apt-get update \
     tesseract-ocr-pol \
     libtesseract-dev
 
-ENV POETRY_VERSION=2.3.4
+ENV POETRY_VERSION=2.4.1
 RUN curl -sSL https://install.python-poetry.org | python3 -
 
 WORKDIR $PYSETUP_PATH
