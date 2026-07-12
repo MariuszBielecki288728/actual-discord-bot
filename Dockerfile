@@ -71,5 +71,4 @@ RUN pip install *.whl
 
 WORKDIR /app
 
-
-# CMD ["/docker-entrypoint.sh"]
+CMD ["python", "-u", "-m", "actual_discord_bot.bot"]

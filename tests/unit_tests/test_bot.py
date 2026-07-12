@@ -5,6 +5,10 @@ import pytest
 
 import actual_discord_bot.bot as bot_module
 from actual_discord_bot import ActualDiscordBot
+from actual_discord_bot.bot import (
+    NOTIFICATION_HELP_MESSAGE,
+    RECEIPT_HELP_MESSAGE,
+)
 from actual_discord_bot.config import DiscordConfig
 from actual_discord_bot.errors import ParseNotificationError
 
@@ -306,9 +310,11 @@ async def test_on_message_ignores_own_messages():
 
 @pytest.mark.asyncio
 async def test_on_ready_finds_bank_and_receipt_channels(bot):
-    bank_channel = MagicMock(spec=discord.TextChannel)
+    bank_channel = AsyncMock(spec=discord.TextChannel)
+    bank_channel.id = 1
     bank_channel.name = "bank-notifications"
-    receipt_channel = MagicMock(spec=discord.TextChannel)
+    receipt_channel = AsyncMock(spec=discord.TextChannel)
+    receipt_channel.id = 2
     receipt_channel.name = "receipts"
     guild = MagicMock()
     guild.channels = [bank_channel, receipt_channel]
@@ -321,6 +327,134 @@ async def test_on_ready_finds_bank_and_receipt_channels(bot):
 
     assert bot.target_channel is bank_channel
     assert bot.receipt_target_channel is receipt_channel
+    bank_channel.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
+    receipt_channel.send.assert_awaited_once_with(RECEIPT_HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_on_ready_only_sends_startup_help_once(bot):
+    bank_channel = AsyncMock(spec=discord.TextChannel)
+    bank_channel.id = 1
+    bank_channel.name = "bank-notifications"
+    guild = MagicMock(channels=[bank_channel])
+
+    with patch.object(
+        type(bot), "guilds", new_callable=lambda: property(lambda _: [guild])
+    ):
+        await bot.on_ready()
+        await bot.on_ready()
+
+    bank_channel.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_startup_help_sends_both_guides_for_shared_channel(bot):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    channel.name = "shared"
+    bot.target_channel = channel
+    bot.receipt_target_channel = channel
+
+    await bot._send_startup_help()  # noqa: SLF001
+
+    assert channel.send.await_args_list == [
+        ((NOTIFICATION_HELP_MESSAGE,), {}),
+        ((RECEIPT_HELP_MESSAGE,), {}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_startup_help_skips_matching_guide_in_last_ten_messages(bot):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    channel.name = "bank-notifications"
+    bot.target_channel = channel
+    bot_user = MagicMock()
+    recent_guide = MagicMock(
+        author=bot_user,
+        content=NOTIFICATION_HELP_MESSAGE,
+    )
+    channel.history.return_value.__aiter__.return_value = [recent_guide]
+
+    with patch.object(
+        type(bot), "user", new_callable=lambda: property(lambda _: bot_user)
+    ):
+        await bot._send_startup_help()  # noqa: SLF001
+
+    channel.history.assert_called_once_with(limit=10)
+    channel.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_startup_help_posts_when_recent_guide_is_not_from_bot(bot):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    channel.name = "bank-notifications"
+    bot.target_channel = channel
+    recent_guide = MagicMock(
+        author=MagicMock(),
+        content=NOTIFICATION_HELP_MESSAGE,
+    )
+    channel.history.return_value.__aiter__.return_value = [recent_guide]
+
+    with patch.object(
+        type(bot), "user", new_callable=lambda: property(lambda _: MagicMock())
+    ):
+        await bot._send_startup_help()  # noqa: SLF001
+
+    channel.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_startup_help_posts_when_bot_guide_is_older_than_history_window(bot):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    channel.name = "bank-notifications"
+    bot.target_channel = channel
+    channel.history.return_value.__aiter__.return_value = []
+
+    await bot._send_startup_help()  # noqa: SLF001
+
+    channel.history.assert_called_once_with(limit=10)
+    channel.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_help_command_sends_notification_guide(bot, ctx):
+    ctx.channel.id = 1
+    await bot.help.callback(bot, ctx)
+
+    ctx.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_help_command_sends_receipt_guide(bot, ctx):
+    receipt_channel = MagicMock(spec=discord.TextChannel)
+    receipt_channel.id = 2
+    bot.receipt_target_channel = receipt_channel
+    ctx.channel.id = 2
+
+    await bot.help.callback(bot, ctx)
+
+    ctx.send.assert_awaited_once_with(RECEIPT_HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_on_message_invokes_valid_command_instead_of_importing(bot):
+    message = AsyncMock(spec=discord.Message)
+    message.author = MagicMock()
+    context = MagicMock(valid=True)
+
+    with (
+        patch.object(type(bot), "user", new_callable=lambda: property(lambda _: None)),
+        patch.object(bot, "get_context", new=AsyncMock(return_value=context)),
+        patch.object(bot, "invoke", new=AsyncMock()) as invoke,
+        patch.object(bot, "handle_message", new=AsyncMock()) as handle_message,
+    ):
+        await bot.on_message(message)
+
+    invoke.assert_awaited_once_with(context)
+    handle_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio

@@ -50,6 +50,7 @@ an existing receipt.
 - **Split transactions** — Each product line item becomes a sub-transaction in Actual Budget
 - **Discount handling** — Recognizes OBNIŻKA/RABAT/UPUST discount lines and includes them as negative sub-transactions
 - **Idempotent catch-up** — `!catch_up` command processes all unprocessed messages in the channel (skips already-reacted ones)
+- **In-channel guidance** — Posts a complete usage guide on startup and provides it on demand with `!help`
 - **Hot-reload** — Uses [cogwatch](https://github.com/robertwayne/cogwatch) for live code reloading during development
 - **Dockerized deployment** — Full Docker Compose setup with bot, Actual server, and integration test services
 
@@ -82,51 +83,164 @@ actual_discord_bot/
     └── transaction.py      # Split transaction creation & deduplication
 ```
 
-## Installation
+## Home LAN Deployment
+
+This is the recommended real-life setup: one always-on Linux machine on your home
+LAN runs Actual Server and the Discord bot with Docker Compose. Phones and
+computers on the same LAN open Actual using that machine's private IP address.
+This guide deliberately does not expose Actual to the internet or cover domains,
+DNS, TLS, VPNs, or cloud hosting.
 
 ### Prerequisites
 
-- Python 3.13+
-- [Poetry](https://python-poetry.org/docs/#installation) (v1.8+)
-- [Actual Budget server](https://actualbudget.org/docs/install/docker) instance
-- A Discord bot token ([guide](https://discord.com/developers/docs/getting-started))
+- An always-on Linux machine connected to the home router by Ethernet or Wi-Fi
+- Docker Engine with the Compose plugin (`docker compose version` must work)
+- A static DHCP lease for the Linux machine, recommended so its LAN IP does not change
+- A Discord account and a server where you can create channels and invite a bot
+- An Android phone if bank notifications will be forwarded with Automate
 
-### Using Docker (recommended)
+### 1. Prepare the Linux host
 
 ```bash
-# Clone the repository
 git clone https://github.com/MariuszBielecki288728/actual-discord-bot.git
 cd actual-discord-bot
-
-# Create .env file (see Configuration section)
-cp .env.example .env  # edit with your values
-
-# Start the bot and Actual server
-docker-compose up bot
+cp deployment/lan/.env.example deployment/lan/.env
+hostname -I
 ```
 
-### Local Development
+Record the private address printed by the last command, for example
+`192.168.1.50`. Reserve that address for this machine in the router's DHCP
+settings if possible. Port `12012` must be allowed by the Linux firewall for the
+local subnet, but should not be forwarded on the router.
+
+### 2. Start and configure Actual Server
+
+Start only Actual first:
 
 ```bash
-# Create virtual env
+docker compose --env-file deployment/lan/.env \
+  -f deployment/lan/compose.yml up -d actual_server
+```
+
+On a device in the same LAN, open `http://192.168.1.50:12012`, substituting the
+host IP. Complete Actual's first-run setup, set a strong server password, and
+create or upload the budget that the bot will use. Create an account for imported
+transactions—for example `Pekao`.
+
+Edit `deployment/lan/.env`:
+
+- `ACTUAL_PASSWORD` is the Actual server password.
+- `ACTUAL_FILE` is the budget file name shown in Actual (for example `My Finances`).
+- `ACTUAL_ENCRYPTION_PASSWORD` is only needed if that budget uses end-to-end encryption.
+- `ACTUAL_ACCOUNT` must exactly match the destination account name in the budget.
+
+The Actual mobile experience is the same web application: connect the phone to
+home Wi-Fi and open `http://192.168.1.50:12012`. Add it to the home screen if
+desired. This address is intentionally available only while connected to the LAN.
+
+### 3. Create and invite the Discord bot
+
+1. In the Discord Developer Portal, create an application and add a bot.
+2. On the bot page, enable the privileged **Message Content Intent**. The bot
+   needs it to read forwarded notifications and commands.
+3. Copy the bot token into `DISCORD_TOKEN` in `deployment/lan/.env`. Treat it like
+   a password and never commit the `.env` file.
+4. In the OAuth2 URL Generator, select the `bot` scope and grant **View Channels**,
+   **Send Messages**, **Read Message History**, **Add Reactions**, and
+   **Attach Files**. Open the generated URL and invite the bot to your server.
+5. Create `bank-notifications` and, optionally, `receipts` text channels. Give the
+   bot the permissions above in both. If different names are used, put the exact
+   names (without `#`) in `DISCORD_BANK_NOTIFICATION_CHANNEL` and
+   `DISCORD_RECEIPT_CHANNEL`.
+
+### 4. Forward bank notifications
+
+Create an incoming Discord webhook for the bank notification channel and copy its
+URL. In Android Automate, build a flow that waits for notifications from the bank
+app and sends an HTTP POST to that webhook with a JSON body whose `content` is:
+
+```text
+Title: <notification title>
+Text: <notification body>
+Timestamp: <notification timestamp>
+```
+
+Set the request content type to `application/json`. Restrict the flow to the bank
+app's package so unrelated phone notifications are never uploaded. The parser
+currently supports Bank Pekao notification wording; test with one notification
+and confirm the transaction in Actual before leaving the flow enabled.
+
+### 5. Start the complete stack
+
+Finish editing `deployment/lan/.env`, then run:
+
+```bash
+docker compose --env-file deployment/lan/.env \
+  -f deployment/lan/compose.yml up -d --build
+docker compose -f deployment/lan/compose.yml logs -f bot
+```
+
+When connected, the bot posts a friendly, channel-specific guide in every
+configured channel. Send `!help` to retrieve the appropriate guide later. Post a
+receipt in the receipt channel or forward a test bank message, then verify both
+the Discord response and the transaction in Actual.
+
+Useful operating commands:
+
+```bash
+# Status and logs
+docker compose -f deployment/lan/compose.yml ps
+docker compose -f deployment/lan/compose.yml logs --tail=100 bot actual_server
+
+# Pull code and rebuild the bot
+git pull
+docker compose --env-file deployment/lan/.env \
+  -f deployment/lan/compose.yml up -d --build
+
+# Stop services without deleting budget data
+docker compose -f deployment/lan/compose.yml down
+```
+
+Actual data lives in the named Docker volume `actual-budget-home_actual_data`.
+Back it up regularly. Do not run `docker compose down -v` unless you intend to
+delete that volume. A backup should be tested before relying on it.
+
+### Troubleshooting
+
+- No startup message: check `docker compose ... logs bot`, channel spelling, bot
+  permissions, Message Content Intent, and the token.
+- Actual cannot be opened from a phone: confirm both devices are on the same LAN,
+  use the Linux host's IP rather than `localhost`, and check the host firewall.
+- Actual connection errors in bot logs: verify password, budget name, account
+  name, and encryption password. Inside Compose the bot correctly uses
+  `http://actual_server:5006`; do not replace it with the host's LAN IP.
+- A bank message has no ✅: its format or wording was not recognized. Inspect the
+  logs, then use `!catch_up` after correcting the cause.
+- OCR results are wrong: use a sharp, evenly lit, straight-on photo and verify the
+  resulting split transaction manually.
+
+## Development Installation
+
+For modifying or testing the project locally, install Python 3.13 and Poetry:
+
+```bash
 python3.13 -m venv ./venv
 source ./venv/bin/activate
-
-# Install Poetry (if not already in venv)
 pip install poetry
-
-# Install all dependencies
 poetry install --with dev,linters,tests
-
-# Install pre-commit hooks
 pre-commit install
 ```
 
-> **Note:** Poetry is installed inside the venv. Always run `source ./venv/bin/activate` before using `poetry`, `pytest`, `pre-commit`, or any other project tooling.
+> Poetry and project tooling live inside the venv. Activate it before running
+> `poetry`, `pytest`, or `pre-commit`.
 
-## Configuration
+The root `docker-compose.yml` supports development and integration testing. For a
+real installation, prefer the isolated `deployment/lan/compose.yml` described
+above.
 
-The bot is configured via environment variables. Create a `.env` file in the project root:
+## Configuration Reference
+
+The bot is configured with these environment variables:
 
 ```bash
 # Discord
@@ -135,7 +249,7 @@ DISCORD_BANK_NOTIFICATION_CHANNEL=bank-notifications  # channel name (not ID)
 DISCORD_RECEIPT_CHANNEL=receipts                      # optional: channel for receipt photos/PDFs
 
 # Actual Budget
-ACTUAL_URL=http://localhost:5006        # URL of your Actual server
+ACTUAL_URL=http://actual_server:5006    # Compose service URL used by the bot
 ACTUAL_PASSWORD=your_actual_password    # Actual server password
 ACTUAL_FILE=My Budget                   # Budget file name or ID
 ACTUAL_ENCRYPTION_PASSWORD=             # Optional: E2E encryption password
@@ -163,11 +277,11 @@ OCR_TESSERACT_PSM=6                     # Tesseract page segmentation mode (defa
 
 ## Usage
 
-### Running the bot
+### Running the development stack
 
 ```bash
 # Via Docker (recommended)
-docker-compose up bot
+docker compose up bot
 
 # Or directly
 python -m actual_discord_bot.bot
@@ -177,6 +291,7 @@ python -m actual_discord_bot.bot
 
 | Command | Description |
 |---------|-------------|
+| `!help` | Show the full channel guide, reactions, supported inputs, and commands |
 | `!catch_up` | Process all unprocessed messages in the notification channel |
 
 ### Discord Channel Setup
@@ -184,7 +299,7 @@ python -m actual_discord_bot.bot
 1. Create a text channel (e.g., `bank-notifications`) in your Discord server
 2. Set up the Automate app on your Android phone to forward bank notifications to this channel
 3. (Optional) Create a second channel (e.g., `receipts`) for posting receipt photos and PDF receipts
-4. The bot will automatically process new messages and create transactions
+4. The bot posts its usage guide on startup and automatically processes new messages
 
 ## Development
 

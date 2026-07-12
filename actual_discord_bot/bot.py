@@ -22,6 +22,34 @@ REACTION_WARNING = "⚠️"
 MAX_ITEMS_IN_SUMMARY = 5
 MAX_RECEIPT_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
+NOTIFICATION_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget notification assistant.**
+
+I watch this channel for bank notifications and turn them into transactions in Actual Budget. Currently I understand Bank Pekao card payments, incoming and outgoing transfers, and phone top-ups forwarded in this format:
+```
+Title: <notification title>
+Text: <notification text>
+Timestamp: <timestamp>
+```
+A ✅ means the transaction was saved. A message without ✅ was not imported; check the bot logs, correct the cause if needed, and run `!catch_up`.
+
+**How notifications reach this channel**
+An administrator can create a Discord webhook for this channel in **Edit Channel → Integrations → Webhooks**. Its webhook URL is the special link that can post messages here—keep it private. On Android, an Automate flow can listen only for notifications from your bank app and send an HTTP POST to that URL, using `application/json` and the format above in the JSON `content` field. Never put your Discord bot token or Actual password in the flow or channel.
+
+**Commands**
+`!help` — show this notification guide
+`!catch_up` — retry messages in this channel that do not already have my ✅"""
+
+RECEIPT_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget receipt assistant.**
+
+Attach one JPG, JPEG, PNG, WebP, or PDF receipt to this channel (maximum 10 MB). I extract the merchant, date, total, and product lines, then create one split transaction in Actual Budget.
+
+I react with ✅ and reply with a summary when a transaction is created. ⚠️ means I found a likely duplicate or the extracted item totals did not match the receipt total, so nothing was saved. ❌ means processing failed. Image text is read with OCR and may be imperfect; use a sharp, evenly lit, straight-on photo and always verify the result in Actual Budget. I ignore ordinary text and unsupported attachments.
+
+**Command**
+`!help` — show this receipt guide
+
+Receipts may contain sensitive information, so only post them in a private channel that is visible to people you trust."""
+
 
 class ActualDiscordBot(commands.Bot):
     def __init__(
@@ -35,11 +63,12 @@ class ActualDiscordBot(commands.Bot):
         self.actual_connector = actual_connector
         self.receipt_handler = receipt_handler
         self.receipt_processing_slots = asyncio.Semaphore(1)
+        self._startup_help_sent = False
 
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix="!", intents=intents, help_command=None)
         self.target_channel: discord.TextChannel | None = None
         self.receipt_target_channel: discord.TextChannel | None = None
 
@@ -59,6 +88,37 @@ class ActualDiscordBot(commands.Bot):
                 break
         if not self.target_channel:
             print(f"Warning: Could not find channel '{self.channel_name}'")
+
+        if not self._startup_help_sent:
+            await self._send_startup_help()
+            self._startup_help_sent = True
+
+    async def _send_startup_help(self) -> None:
+        """Announce the bot once per process in every configured channel found."""
+        channel_guides = (
+            (self.target_channel, NOTIFICATION_HELP_MESSAGE),
+            (self.receipt_target_channel, RECEIPT_HELP_MESSAGE),
+        )
+        for channel, guide in channel_guides:
+            if channel is None:
+                continue
+            try:
+                if await self._has_recent_guide(channel, guide):
+                    continue
+                await channel.send(guide)
+            except (discord.Forbidden, discord.HTTPException) as error:
+                print(f"Could not send startup help to '{channel.name}': {error}")
+
+    async def _has_recent_guide(
+        self,
+        channel: discord.TextChannel,
+        guide: str,
+    ) -> bool:
+        """Return whether this bot posted the current guide in the last 10 messages."""
+        async for message in channel.history(limit=10):
+            if message.author == self.user and message.content == guide:
+                return True
+        return False
 
     async def create_actual_transaction(self, message: discord.Message) -> bool:
         try:
@@ -204,6 +264,11 @@ class ActualDiscordBot(commands.Bot):
         if message.author == self.user:
             return
 
+        context = await self.get_context(message)
+        if context.valid:
+            await self.invoke(context)
+            return
+
         if self.target_channel and message.channel.id == self.target_channel.id:
             await self.handle_message(message)
         elif (
@@ -229,6 +294,17 @@ class ActualDiscordBot(commands.Bot):
                     processed_count += 1
 
         await ctx.send(f"Catch-up complete. Processed {processed_count} messages.")
+
+    @commands.command(name="help")
+    async def help(self, ctx: commands.Context) -> None:
+        """Show the guide for the channel where the command was sent."""
+        if (
+            self.receipt_target_channel
+            and ctx.channel.id == self.receipt_target_channel.id
+        ):
+            await ctx.send(RECEIPT_HELP_MESSAGE)
+        else:
+            await ctx.send(NOTIFICATION_HELP_MESSAGE)
 
 
 async def main() -> None:
