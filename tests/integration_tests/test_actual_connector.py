@@ -5,7 +5,7 @@ from actual_discord_bot.actual_connector import ActualConnector
 from actual_discord_bot.config import ActualConfig
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
 
-ACTUAL_TEST_URL = os.environ.get("ACTUAL_TEST_URL", "http://localhost:12012")
+ACTUAL_TEST_URL = os.environ.get("ACTUAL_TEST_URL", "http://localhost:12013")
 
 
 def test_actual_connector(actual):
