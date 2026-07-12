@@ -32,6 +32,13 @@ A Discord bot that automatically creates transactions in [Actual Budget](https:/
 4. Bot creates a **split transaction** in Actual Budget where each product is a sub-transaction
 5. Bot reacts with ✅/⚠️/❌ and replies with a summary
 
+Receipt processing is intentionally bounded to one attachment at a time, 10 MB
+per attachment, 25 million image pixels, and 10 PDF pages. Deduplication requires
+the account, signed amount, date window, and a normalized merchant-name match;
+same-value purchases from different merchants are therefore kept separate. The
+Discord reply explicitly reports whether a transaction was created or skipped as
+an existing receipt.
+
 ## Features
 
 ### Implemented

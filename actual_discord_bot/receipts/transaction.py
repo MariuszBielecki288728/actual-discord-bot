@@ -1,5 +1,6 @@
 import datetime
 import hashlib
+import unicodedata
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -10,6 +11,7 @@ from actual.queries import create_splits, create_transaction, get_transactions
 from actual_discord_bot.receipts.models import ParsedReceipt
 
 ROUNDING_TOLERANCE = Decimal("0.02")
+MIN_MATCH_NAME_LENGTH = 4
 
 
 def generate_receipt_imported_id(receipt: ParsedReceipt) -> str:
@@ -26,6 +28,7 @@ def find_matching_transaction(
     account_name: str,
     date_tolerance_days: int = 1,
     receipt_only: bool = False,
+    expected_payee: str | None = None,
 ) -> Transactions | None:
     """
     Find an existing transaction that likely represents the same purchase.
@@ -45,14 +48,40 @@ def find_matching_transaction(
         amount=amount,
     )
 
-    # Return the first matching parent transaction. Bank notification imports use
-    # receipt_only so one ordinary same-amount expense cannot suppress another.
+    # Return the first matching parent transaction. Requiring a recognizable
+    # merchant prevents unrelated same-value purchases from being deduplicated.
     for txn in transactions:
         is_receipt = (txn.financial_id or "").startswith("receipt:")
-        if not txn.is_child and (not receipt_only or is_receipt):
+        merchant_matches = expected_payee is None or any(
+            _merchant_names_match(expected_payee, candidate)
+            for candidate in _transaction_merchant_names(txn)
+        )
+        if not txn.is_child and (not receipt_only or is_receipt) and merchant_matches:
             return txn
 
     return None
+
+
+def _normalize_merchant_name(value: str) -> str:
+    """Normalize merchant names from bank and OCR sources for comparison."""
+    decomposed = unicodedata.normalize("NFKD", value.casefold())
+    return "".join(character for character in decomposed if character.isalnum())
+
+
+def _merchant_names_match(expected: str, candidate: str) -> bool:
+    expected_normalized = _normalize_merchant_name(expected)
+    candidate_normalized = _normalize_merchant_name(candidate)
+    if min(len(expected_normalized), len(candidate_normalized)) < MIN_MATCH_NAME_LENGTH:
+        return False
+    return (
+        expected_normalized in candidate_normalized
+        or candidate_normalized in expected_normalized
+    )
+
+
+def _transaction_merchant_names(transaction: Transactions) -> tuple[str, ...]:
+    values = (transaction.imported_description, transaction.notes)
+    return tuple(value for value in values if isinstance(value, str) and value.strip())
 
 
 def create_receipt_split_transaction(
@@ -60,7 +89,7 @@ def create_receipt_split_transaction(
     receipt: ParsedReceipt,
     account_name: str,
     transaction_date: date | None = None,
-) -> None:
+) -> bool:
     """
     Create a split transaction in Actual Budget from a parsed receipt.
 
@@ -94,9 +123,10 @@ def create_receipt_split_transaction(
         amount=-receipt.total,
         transaction_date=txn_date,
         account_name=account_name,
+        expected_payee=receipt.store_name,
     )
     if existing:
-        return
+        return False
 
     # Create individual sub-transactions for each item
     sub_transactions = []
@@ -129,3 +159,4 @@ def create_receipt_split_transaction(
     )
     parent.financial_id = imported_id
     actual.commit()
+    return True

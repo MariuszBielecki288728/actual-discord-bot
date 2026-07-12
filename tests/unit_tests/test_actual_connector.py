@@ -60,6 +60,7 @@ class TestBankNotificationDeduplication:
             transaction_date=date(2026, 4, 30),
             account_name="Pekao",
             receipt_only=True,
+            expected_payee="Kaufland",
         )
 
     def test_creates_transaction_when_no_receipt_exists(
@@ -116,6 +117,7 @@ class TestBankNotificationDeduplication:
             transaction_date=date(2026, 5, 1),
             account_name="Pekao",
             receipt_only=True,
+            expected_payee="Biedronka",
         )
 
     def test_does_not_dedup_positive_deposit(self, connector, mock_actual_manager):
@@ -196,8 +198,12 @@ class TestSaveReceiptTransaction:
 
         with patch(
             "actual_discord_bot.actual_connector.create_receipt_split_transaction",
+            return_value=True,
         ) as mock_create:
-            connector.save_receipt_transaction(receipt, fallback_date=date(2026, 5, 1))
+            created = connector.save_receipt_transaction(
+                receipt,
+                fallback_date=date(2026, 5, 1),
+            )
 
         mock_create.assert_called_once_with(
             actual=mock_actual_manager,
@@ -205,3 +211,4 @@ class TestSaveReceiptTransaction:
             account_name="Pekao",
             transaction_date=date(2026, 5, 1),
         )
+        assert created is True

@@ -2,6 +2,12 @@ import io
 
 import pdfplumber
 
+MAX_PDF_PAGES = 10
+
+
+class PDFExtractionError(Exception):
+    """Raised when a PDF cannot be processed safely."""
+
 
 class PDFExtractor:
     """Extract text content from PDF receipt files."""
@@ -18,6 +24,9 @@ class PDFExtractor:
         """Extract text from a PDF source (file path or BytesIO)."""
         pages_text = []
         with pdfplumber.open(source) as pdf:
+            if len(pdf.pages) > MAX_PDF_PAGES:
+                msg = f"PDF exceeds the {MAX_PDF_PAGES}-page limit"
+                raise PDFExtractionError(msg)
             for page in pdf.pages:
                 text = page.extract_text()
                 if text:

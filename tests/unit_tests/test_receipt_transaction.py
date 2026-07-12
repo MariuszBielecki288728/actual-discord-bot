@@ -224,6 +224,52 @@ class TestFindMatchingTransaction:
 
         assert result is None
 
+    def test_ignores_same_amount_transaction_from_another_merchant(self):
+        mock_actual = MagicMock()
+        transaction = MagicMock(
+            financial_id=None,
+            imported_description="Biedronka",
+            is_child=False,
+            notes=None,
+        )
+
+        with patch(
+            "actual_discord_bot.receipts.transaction.get_transactions",
+            return_value=[transaction],
+        ):
+            result = find_matching_transaction(
+                actual=mock_actual,
+                amount=Decimal("-10.00"),
+                transaction_date=date(2026, 5, 1),
+                account_name="Account",
+                expected_payee="Kaufland",
+            )
+
+        assert result is None
+
+    def test_matches_normalized_partial_merchant_name(self):
+        mock_actual = MagicMock()
+        transaction = MagicMock(
+            financial_id=None,
+            imported_description="Polski Koncern Naftowy ORLEN S.A.",
+            is_child=False,
+            notes=None,
+        )
+
+        with patch(
+            "actual_discord_bot.receipts.transaction.get_transactions",
+            return_value=[transaction],
+        ):
+            result = find_matching_transaction(
+                actual=mock_actual,
+                amount=Decimal("-231.30"),
+                transaction_date=date(2026, 5, 1),
+                account_name="Account",
+                expected_payee="Orlen",
+            )
+
+        assert result is transaction
+
 
 class TestCreateReceiptSplitTransaction:
     """Test split transaction creation logic."""
@@ -320,13 +366,14 @@ class TestCreateReceiptSplitTransaction:
             with patch(
                 "actual_discord_bot.receipts.transaction.create_transaction",
             ) as mock_create:
-                create_receipt_split_transaction(
+                created = create_receipt_split_transaction(
                     actual=mock_actual,
                     receipt=receipt,
                     account_name="TestAccount",
                 )
 
         mock_create.assert_not_called()
+        assert created is False
 
     def test_rounding_subtransaction_created_for_difference(self):
         """When items don't sum to total, a rounding adjustment is added."""

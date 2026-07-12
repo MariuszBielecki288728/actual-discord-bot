@@ -3,7 +3,7 @@ import os
 import tempfile
 from datetime import date
 from decimal import Decimal
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from PIL import Image
@@ -13,6 +13,7 @@ from actual_discord_bot.receipts.handler import (
     ReceiptProcessingError,
 )
 from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
+from actual_discord_bot.receipts.pdf_extractor import PDFExtractionError
 
 
 @pytest.fixture
@@ -78,6 +79,17 @@ class TestReceiptHandlerProcessImage:
         receipt = handler.process_image_bytes(buf.getvalue(), date(2026, 5, 1))
         assert receipt.date == date(2026, 5, 1)
 
+    def test_rejects_image_over_pixel_limit(self, handler):
+        image = MagicMock(width=5_001, height=5_000)
+        image.__enter__.return_value = image
+
+        with patch(
+            "actual_discord_bot.receipts.handler.Image.open",
+            return_value=image,
+        ):
+            with pytest.raises(ReceiptProcessingError, match="pixel limit"):
+                handler.process_image_bytes(b"image")
+
 
 class TestReceiptHandlerProcessPDF:
     def test_process_pdf_bytes_calls_extractor(self, handler, mock_pdf_extractor):
@@ -102,6 +114,14 @@ class TestReceiptHandlerProcessPDF:
         )
         receipt = handler.process_pdf_bytes(b"pdf", date(2026, 5, 1))
         assert receipt.date == date(2026, 5, 1)
+
+    def test_pdf_page_limit_error_is_reported(self, handler, mock_pdf_extractor):
+        mock_pdf_extractor.extract_text_from_bytes.side_effect = PDFExtractionError(
+            "PDF exceeds the 10-page limit"
+        )
+
+        with pytest.raises(ReceiptProcessingError, match="10-page limit"):
+            handler.process_pdf_bytes(b"pdf")
 
 
 class TestReceiptHandlerValidation:

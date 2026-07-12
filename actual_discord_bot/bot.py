@@ -20,6 +20,7 @@ REACTION_EMOJI = "✅"
 REACTION_ERROR = "❌"
 REACTION_WARNING = "⚠️"
 MAX_ITEMS_IN_SUMMARY = 5
+MAX_RECEIPT_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
 
 class ActualDiscordBot(commands.Bot):
@@ -33,6 +34,7 @@ class ActualDiscordBot(commands.Bot):
         self.receipt_channel_name = config.receipt_channel
         self.actual_connector = actual_connector
         self.receipt_handler = receipt_handler
+        self.receipt_processing_slots = asyncio.Semaphore(1)
 
         intents = discord.Intents.default()
         intents.message_content = True
@@ -91,57 +93,15 @@ class ActualDiscordBot(commands.Bot):
             return
 
         try:
-            file_bytes = await attachment.read()
-            suffix = "." + attachment.filename.rsplit(".", 1)[-1].lower()
-            fallback_date = message.created_at.date()
+            attachment_size = getattr(attachment, "size", None)
+            if (
+                isinstance(attachment_size, int)
+                and attachment_size > MAX_RECEIPT_ATTACHMENT_BYTES
+            ):
+                self._raise_attachment_too_large()
 
-            if suffix in PDF_EXTENSIONS:
-                receipt = await asyncio.to_thread(
-                    self.receipt_handler.process_pdf_bytes,
-                    file_bytes,
-                    fallback_date,
-                )
-            elif suffix in IMAGE_EXTENSIONS:
-                receipt = await asyncio.to_thread(
-                    self.receipt_handler.process_image_bytes,
-                    file_bytes,
-                    fallback_date,
-                )
-            else:
-                return
-
-            is_valid, diff = self.receipt_handler.validate_receipt(receipt)
-
-            items_summary = ", ".join(
-                f"{item.name} ({item.total_price})"
-                for item in receipt.items[:MAX_ITEMS_IN_SUMMARY]
-            )
-            more = (
-                f" +{len(receipt.items) - MAX_ITEMS_IN_SUMMARY} more"
-                if len(receipt.items) > MAX_ITEMS_IN_SUMMARY
-                else ""
-            )
-
-            if not is_valid:
-                await message.add_reaction(REACTION_WARNING)
-                await message.reply(
-                    "Receipt was not saved because of an item-total mismatch: "
-                    f"the receipt total differs by {diff} PLN.\n"
-                    f"Items: {items_summary}{more}",
-                )
-                return
-
-            await asyncio.to_thread(
-                self.actual_connector.save_receipt_transaction,
-                receipt,
-                fallback_date,
-            )
-            await message.add_reaction(REACTION_EMOJI)
-            await message.reply(
-                f"Created split transaction: **{receipt.store_name}**, "
-                f"{len(receipt.items)} items, {receipt.total} PLN\n"
-                f"Items: {items_summary}{more}",
-            )
+            async with self.receipt_processing_slots:
+                await self._process_receipt_attachment(message, attachment)
 
         except ReceiptProcessingError as e:
             await message.add_reaction(REACTION_ERROR)
@@ -152,6 +112,80 @@ class ActualDiscordBot(commands.Bot):
             await message.reply(
                 "An unexpected error occurred while processing the receipt."
             )
+
+    async def _process_receipt_attachment(
+        self,
+        message: discord.Message,
+        attachment: discord.Attachment,
+    ) -> None:
+        """Parse and persist one receipt while the processing slot is held."""
+        file_bytes = await attachment.read()
+        if len(file_bytes) > MAX_RECEIPT_ATTACHMENT_BYTES:
+            self._raise_attachment_too_large()
+
+        suffix = "." + attachment.filename.rsplit(".", 1)[-1].lower()
+        fallback_date = message.created_at.date()
+
+        if suffix in PDF_EXTENSIONS:
+            receipt = await asyncio.to_thread(
+                self.receipt_handler.process_pdf_bytes,
+                file_bytes,
+                fallback_date,
+            )
+        elif suffix in IMAGE_EXTENSIONS:
+            receipt = await asyncio.to_thread(
+                self.receipt_handler.process_image_bytes,
+                file_bytes,
+                fallback_date,
+            )
+        else:
+            return
+
+        is_valid, diff = self.receipt_handler.validate_receipt(receipt)
+
+        items_summary = ", ".join(
+            f"{item.name} ({item.total_price})"
+            for item in receipt.items[:MAX_ITEMS_IN_SUMMARY]
+        )
+        more = (
+            f" +{len(receipt.items) - MAX_ITEMS_IN_SUMMARY} more"
+            if len(receipt.items) > MAX_ITEMS_IN_SUMMARY
+            else ""
+        )
+
+        if not is_valid:
+            await message.add_reaction(REACTION_WARNING)
+            await message.reply(
+                "Receipt was not saved because of an item-total mismatch: "
+                f"the receipt total differs by {diff} PLN.\n"
+                f"Items: {items_summary}{more}",
+            )
+            return
+
+        created = await asyncio.to_thread(
+            self.actual_connector.save_receipt_transaction,
+            receipt,
+            fallback_date,
+        )
+        if not created:
+            await message.add_reaction(REACTION_WARNING)
+            await message.reply(
+                f"Receipt already exists: **{receipt.store_name}**, "
+                f"{receipt.total} PLN. No transaction was created.",
+            )
+            return
+
+        await message.add_reaction(REACTION_EMOJI)
+        await message.reply(
+            f"Created split transaction: **{receipt.store_name}**, "
+            f"{len(receipt.items)} items, {receipt.total} PLN\n"
+            f"Items: {items_summary}{more}",
+        )
+
+    @staticmethod
+    def _raise_attachment_too_large() -> None:
+        msg = "Receipt attachment exceeds the 10 MB limit."
+        raise ReceiptProcessingError(msg)
 
     @staticmethod
     def _get_receipt_attachment(

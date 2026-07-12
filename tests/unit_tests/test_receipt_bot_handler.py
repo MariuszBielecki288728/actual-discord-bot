@@ -260,3 +260,42 @@ class TestReceiptMessageHandler:
         await bot.handle_receipt_message(message)
 
         mock_actual_connector.save_receipt_transaction.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_duplicate_receipt_reports_that_nothing_was_created(
+        self, bot, mock_receipt_message
+    ):
+        receipt = ParsedReceipt(
+            store_name="Kaufland",
+            items=[
+                ReceiptItem("Item", Decimal("1"), Decimal("10.00"), Decimal("10.00"))
+            ],
+            total=Decimal("10.00"),
+        )
+        bot.receipt_handler.process_image_bytes = MagicMock(return_value=receipt)
+        bot.receipt_handler.validate_receipt = MagicMock(
+            return_value=(True, Decimal("0"))
+        )
+        bot.actual_connector.save_receipt_transaction.return_value = False
+
+        await bot.handle_receipt_message(mock_receipt_message)
+
+        mock_receipt_message.add_reaction.assert_called_with("⚠️")
+        reply = mock_receipt_message.reply.call_args.args[0]
+        assert "already exists" in reply
+        assert "No transaction was created" in reply
+
+    @pytest.mark.asyncio
+    async def test_rejects_attachment_over_size_limit(self, bot):
+        message = AsyncMock(spec=discord.Message)
+        attachment = MagicMock(spec=discord.Attachment)
+        attachment.filename = "receipt.pdf"
+        attachment.size = 10 * 1024 * 1024 + 1
+        attachment.read = AsyncMock()
+        message.attachments = [attachment]
+
+        await bot.handle_receipt_message(message)
+
+        attachment.read.assert_not_awaited()
+        message.add_reaction.assert_called_with("❌")
+        assert "10 MB limit" in message.reply.call_args.args[0]

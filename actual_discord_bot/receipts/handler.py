@@ -12,11 +12,12 @@ from actual_discord_bot.receipts.ocr_provider import (
     create_ocr_provider,
 )
 from actual_discord_bot.receipts.parser import ReceiptParser
-from actual_discord_bot.receipts.pdf_extractor import PDFExtractor
+from actual_discord_bot.receipts.pdf_extractor import PDFExtractionError, PDFExtractor
 from actual_discord_bot.receipts.preprocessing import preprocess_image
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tiff"}
 PDF_EXTENSIONS = {".pdf"}
+MAX_IMAGE_PIXELS = 25_000_000
 
 
 class ReceiptProcessingError(Exception):
@@ -43,6 +44,7 @@ class ReceiptHandler:
     ) -> ParsedReceipt:
         """Process a receipt image from raw bytes."""
         with Image.open(io.BytesIO(image_bytes)) as image:
+            self._validate_image_size(image)
             return self.process_image(image, fallback_date)
 
     def process_image(
@@ -63,7 +65,10 @@ class ReceiptHandler:
         self, pdf_bytes: bytes, fallback_date: date | None = None
     ) -> ParsedReceipt:
         """Process a PDF receipt from raw bytes."""
-        text = self.pdf_extractor.extract_text_from_bytes(pdf_bytes)
+        try:
+            text = self.pdf_extractor.extract_text_from_bytes(pdf_bytes)
+        except PDFExtractionError as error:
+            raise ReceiptProcessingError(str(error)) from error
         if not text.strip():
             msg = "PDF text extraction returned empty text"
             raise ReceiptProcessingError(msg)
@@ -80,13 +85,17 @@ class ReceiptHandler:
         suffix = path.suffix.lower()
 
         if suffix in PDF_EXTENSIONS:
-            text = self.pdf_extractor.extract_text(str(path))
+            try:
+                text = self.pdf_extractor.extract_text(str(path))
+            except PDFExtractionError as error:
+                raise ReceiptProcessingError(str(error)) from error
             if not text.strip():
                 msg = "PDF text extraction returned empty text"
                 raise ReceiptProcessingError(msg)
             receipt = self.parser.parse(text, source="pdf")
         elif suffix in IMAGE_EXTENSIONS:
             with Image.open(path) as image:
+                self._validate_image_size(image)
                 return self.process_image(image, fallback_date)
         else:
             msg = f"Unsupported file type: {suffix}"
@@ -95,6 +104,12 @@ class ReceiptHandler:
         if receipt.date is None:
             receipt.date = fallback_date
         return receipt
+
+    @staticmethod
+    def _validate_image_size(image: Image.Image) -> None:
+        if image.width * image.height > MAX_IMAGE_PIXELS:
+            msg = f"Image exceeds the {MAX_IMAGE_PIXELS:,}-pixel limit"
+            raise ReceiptProcessingError(msg)
 
     @staticmethod
     def validate_receipt(receipt: ParsedReceipt) -> tuple[bool, Decimal]:

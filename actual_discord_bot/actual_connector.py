@@ -38,6 +38,7 @@ class ActualConnector:
                     transaction_date=transaction_data.date,
                     account_name=transaction_data.account,
                     receipt_only=True,
+                    expected_payee=transaction_data.imported_payee,
                 )
                 if existing:
                     return existing
@@ -58,10 +59,10 @@ class ActualConnector:
         self,
         receipt: ParsedReceipt,
         fallback_date: date | None = None,
-    ) -> None:
+    ) -> bool:
         """Create a split transaction from a parsed receipt."""
         with self.actual_manager as actual:
-            create_receipt_split_transaction(
+            return create_receipt_split_transaction(
                 actual=actual,
                 receipt=receipt,
                 account_name=self.config.account,

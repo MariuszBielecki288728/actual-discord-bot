@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from actual_discord_bot.receipts.pdf_extractor import PDFExtractor
+from actual_discord_bot.receipts.pdf_extractor import PDFExtractionError, PDFExtractor
 
 RECEIPTS_DIR = Path(__file__).parent.parent / "receipts"
 
@@ -54,3 +54,14 @@ class TestPDFExtractor:
             text = extractor.extract_text("receipt.pdf")
 
         assert text == "First page"
+
+    def test_rejects_pdf_over_page_limit(self, extractor):
+        with patch(
+            "actual_discord_bot.receipts.pdf_extractor.pdfplumber.open"
+        ) as mock_open:
+            mock_open.return_value.__enter__.return_value.pages = [
+                MagicMock() for _ in range(11)
+            ]
+
+            with pytest.raises(PDFExtractionError, match="10-page limit"):
+                extractor.extract_text("receipt.pdf")
