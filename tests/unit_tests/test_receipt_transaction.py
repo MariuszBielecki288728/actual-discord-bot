@@ -206,6 +206,24 @@ class TestFindMatchingTransaction:
 
         assert mock_get.call_args[1]["amount"] == Decimal("-10.00")
 
+    def test_receipt_only_ignores_an_ordinary_transaction(self):
+        mock_actual = MagicMock()
+        ordinary_txn = MagicMock(financial_id=None, is_child=False)
+
+        with patch(
+            "actual_discord_bot.receipts.transaction.get_transactions",
+            return_value=[ordinary_txn],
+        ):
+            result = find_matching_transaction(
+                actual=mock_actual,
+                amount=Decimal("-10.00"),
+                transaction_date=date(2026, 5, 1),
+                account_name="Account",
+                receipt_only=True,
+            )
+
+        assert result is None
+
 
 class TestCreateReceiptSplitTransaction:
     """Test split transaction creation logic."""
@@ -375,3 +393,20 @@ class TestCreateReceiptSplitTransaction:
                     )
 
         mock_splits.assert_not_called()
+        mock_actual.session.add.assert_not_called()
+
+    def test_rejects_an_empty_receipt_before_creating_transactions(self):
+        mock_actual = MagicMock()
+        receipt = ParsedReceipt(store_name="Unknown")
+
+        with patch(
+            "actual_discord_bot.receipts.transaction.create_transaction",
+        ) as mock_create:
+            with pytest.raises(ValueError, match="at least one item"):
+                create_receipt_split_transaction(
+                    actual=mock_actual,
+                    receipt=receipt,
+                    account_name="TestAccount",
+                )
+
+        mock_create.assert_not_called()

@@ -99,8 +99,19 @@ PRICE_ONLY_RE = re.compile(
 # Standalone price line (used in PDF digital receipts)
 STANDALONE_PRICE_RE = re.compile(r"^-?[\d]+[.,]\d{2}$")
 
+PARTIAL_PRODUCT_LINE_RE = re.compile(
+    r"^.+\s+[\d]+[.,]?\d*\s*[x\N{MULTIPLICATION SIGN}*]\s*-?[\d]+[.,]\d{2}$",
+)
+TRAILING_TOTAL_RE = re.compile(r"^-?[\d]+[.,]\d{2}[A-D]?$")
+
 # Digital receipt header detection
 DIGITAL_RECEIPT_HEADER_RE = re.compile(r"Podsumowanie\s+zakup|Cena\s+w", re.IGNORECASE)
+
+# Targeted repairs for common Tesseract substitutions in price columns.
+OCR_DISCOUNT_RE = re.compile(
+    r"^(?P<name>OBNI[ZŻ]KA|RABAT|UPUST)[.\s]+7?(?P<price>\d+[.,]\d{2})8$",
+    re.IGNORECASE,
+)
 
 
 def _parse_decimal(value: str) -> Decimal:
@@ -117,6 +128,37 @@ def _strip_article_code(name: str) -> str:
     return ARTICLE_CODE_RE.sub("", name).strip()
 
 
+def _normalize_ocr_line(line: str) -> str:
+    """Repair unambiguous OCR artifacts in receipt price columns."""
+    if match := OCR_DISCOUNT_RE.match(line):
+        return f"{match.group('name')} -{match.group('price')}B"
+
+    normalized = re.sub(r"(?<=[x*\N{MULTIPLICATION SIGN}])/(?=\.\d{2})", "7", line)
+    normalized = re.sub(
+        r"(?<=\d)([.,])\s+(?=\d{2}[A-D8]?\s*$)",
+        r"\1",
+        normalized,
+    )
+    return re.sub(r"(\d+[.,]\d{2})8\s*$", r"\1B", normalized)
+
+
+def _merge_wrapped_product_lines(lines: list[str]) -> list[str]:
+    """Join OCR product rows whose total wrapped onto the following line."""
+    merged: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = _normalize_ocr_line(lines[index].strip())
+        if index + 1 < len(lines) and PARTIAL_PRODUCT_LINE_RE.match(line):
+            following = _normalize_ocr_line(lines[index + 1].strip())
+            if TRAILING_TOTAL_RE.match(following):
+                merged.append(f"{line} {following}")
+                index += 2
+                continue
+        merged.append(line)
+        index += 1
+    return merged
+
+
 def _is_non_product_line(line: str) -> bool:
     """Check if a line is not a product (tax summary, discount summary, etc.)."""
     if TAX_SECTION_RE.search(line):
@@ -129,7 +171,7 @@ class ReceiptParser:
 
     def parse(self, text: str, source: str = "photo") -> ParsedReceipt:
         """Parse raw receipt text into a ParsedReceipt."""
-        lines = text.strip().splitlines()
+        lines = _merge_wrapped_product_lines(text.strip().splitlines())
 
         # Detect digital receipt format (e.g., Kaufland PDF)
         if self._is_digital_receipt_format(lines):
@@ -169,7 +211,7 @@ class ReceiptParser:
     def _extract_digital_store_name(self, lines: list[str]) -> str:
         """Extract store name from digital receipt header."""
         for line in lines:
-            stripped = line.strip()
+            stripped = _normalize_ocr_line(line.strip())
             if stripped and "Podsumowanie" not in stripped and "Cena" not in stripped:
                 return stripped
         return "Unknown"

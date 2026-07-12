@@ -25,6 +25,7 @@ def find_matching_transaction(
     transaction_date: date,
     account_name: str,
     date_tolerance_days: int = 1,
+    receipt_only: bool = False,
 ) -> Transactions | None:
     """
     Find an existing transaction that likely represents the same purchase.
@@ -44,9 +45,11 @@ def find_matching_transaction(
         amount=amount,
     )
 
-    # Return the first non-child transaction that matches
+    # Return the first matching parent transaction. Bank notification imports use
+    # receipt_only so one ordinary same-amount expense cannot suppress another.
     for txn in transactions:
-        if not txn.is_child:
+        is_receipt = (txn.financial_id or "").startswith("receipt:")
+        if not txn.is_child and (not receipt_only or is_receipt):
             return txn
 
     return None
@@ -70,6 +73,21 @@ def create_receipt_split_transaction(
     )
     imported_id = generate_receipt_imported_id(receipt)
 
+    items_sum = sum(
+        (item.total_price for item in receipt.items),
+        start=Decimal("0"),
+    )
+    diff = receipt.total - items_sum
+    if not receipt.items or receipt.total <= 0:
+        msg = "Receipt must contain at least one item and have a positive total"
+        raise ValueError(msg)
+    if abs(diff) > ROUNDING_TOLERANCE:
+        msg = (
+            "Receipt item total differs from receipt total by "
+            f"{diff} PLN, exceeding the rounding tolerance"
+        )
+        raise ValueError(msg)
+
     # Deduplication: check if a matching transaction already exists
     existing = find_matching_transaction(
         actual=actual,
@@ -92,18 +110,6 @@ def create_receipt_split_transaction(
             notes=item.name,
         )
         sub_transactions.append(t)
-
-    # Only small differences are safe to represent as rounding.  Larger
-    # discrepancies mean the receipt was parsed incorrectly and must not be
-    # persisted as a misleading split transaction.
-    items_sum = sum(item.total_price for item in receipt.items)
-    diff = receipt.total - items_sum
-    if abs(diff) > ROUNDING_TOLERANCE:
-        msg = (
-            "Receipt item total differs from receipt total by "
-            f"{diff} PLN, exceeding the rounding tolerance"
-        )
-        raise ValueError(msg)
 
     if diff != Decimal("0"):
         rounding_txn = create_transaction(

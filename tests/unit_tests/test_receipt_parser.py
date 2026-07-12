@@ -271,6 +271,14 @@ class TestTotalValidation:
         assert is_valid is False
         assert diff == Decimal("5.00")
 
+    def test_empty_receipt_is_invalid(self):
+        receipt = ParsedReceipt(store_name="Unknown")
+
+        is_valid, diff = ReceiptHandler.validate_receipt(receipt)
+
+        assert is_valid is False
+        assert diff == Decimal("0")
+
 
 class TestDigitalReceiptParser:
     """Test parsing of digital receipt PDFs (Kaufland-style format)."""
@@ -386,6 +394,37 @@ SUMA PLN 8,00
         assert len(receipt.items) == 2
         assert receipt.items[0].name == "Item1"
         assert receipt.items[1].is_discount is True
+
+    def test_repairs_common_fuel_receipt_ocr_artifacts(self, parser):
+        text = """\
+ORLEN
+PARAGON FISKALNY
+EFECTA DIESEL CN271020110(8) (B) 30*/.79
+233. 708
+OBNIŻKA. 72.408
+SUMA: . . PLN 231.30
+"""
+
+        receipt = parser.parse(text)
+
+        assert receipt.items == [
+            ReceiptItem(
+                name="EFECTA DIESEL CN271020110(8) (B)",
+                quantity=Decimal("30"),
+                unit_price=Decimal("7.79"),
+                total_price=Decimal("233.70"),
+                vat_category="B",
+            ),
+            ReceiptItem(
+                name="OBNIŻKA",
+                quantity=Decimal("1"),
+                unit_price=Decimal("-2.40"),
+                total_price=Decimal("-2.40"),
+                vat_category="B",
+                is_discount=True,
+            ),
+        ]
+        assert receipt.total == Decimal("231.30")
 
 
 class TestDateDotFormat:

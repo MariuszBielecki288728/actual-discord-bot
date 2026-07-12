@@ -96,12 +96,16 @@ class ActualDiscordBot(commands.Bot):
             fallback_date = message.created_at.date()
 
             if suffix in PDF_EXTENSIONS:
-                receipt = self.receipt_handler.process_pdf_bytes(
-                    file_bytes, fallback_date
+                receipt = await asyncio.to_thread(
+                    self.receipt_handler.process_pdf_bytes,
+                    file_bytes,
+                    fallback_date,
                 )
             elif suffix in IMAGE_EXTENSIONS:
-                receipt = self.receipt_handler.process_image_bytes(
-                    file_bytes, fallback_date
+                receipt = await asyncio.to_thread(
+                    self.receipt_handler.process_image_bytes,
+                    file_bytes,
+                    fallback_date,
                 )
             else:
                 return
@@ -127,7 +131,11 @@ class ActualDiscordBot(commands.Bot):
                 )
                 return
 
-            self.actual_connector.save_receipt_transaction(receipt, fallback_date)
+            await asyncio.to_thread(
+                self.actual_connector.save_receipt_transaction,
+                receipt,
+                fallback_date,
+            )
             await message.add_reaction(REACTION_EMOJI)
             await message.reply(
                 f"Created split transaction: **{receipt.store_name}**, "

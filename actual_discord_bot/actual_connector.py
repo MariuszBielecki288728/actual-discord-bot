@@ -37,6 +37,7 @@ class ActualConnector:
                     amount=Decimal(str(transaction_data.amount)),
                     transaction_date=transaction_data.date,
                     account_name=transaction_data.account,
+                    receipt_only=True,
                 )
                 if existing:
                     return existing

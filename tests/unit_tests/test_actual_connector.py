@@ -59,6 +59,7 @@ class TestBankNotificationDeduplication:
             amount=Decimal("-23.48"),
             transaction_date=date(2026, 4, 30),
             account_name="Pekao",
+            receipt_only=True,
         )
 
     def test_creates_transaction_when_no_receipt_exists(
@@ -114,6 +115,7 @@ class TestBankNotificationDeduplication:
             amount=Decimal("-50.00"),
             transaction_date=date(2026, 5, 1),
             account_name="Pekao",
+            receipt_only=True,
         )
 
     def test_does_not_dedup_positive_deposit(self, connector, mock_actual_manager):

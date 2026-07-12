@@ -42,8 +42,8 @@ class ReceiptHandler:
         self, image_bytes: bytes, fallback_date: date | None = None
     ) -> ParsedReceipt:
         """Process a receipt image from raw bytes."""
-        image = Image.open(io.BytesIO(image_bytes))
-        return self.process_image(image, fallback_date)
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            return self.process_image(image, fallback_date)
 
     def process_image(
         self, image: Image.Image, fallback_date: date | None = None
@@ -86,8 +86,8 @@ class ReceiptHandler:
                 raise ReceiptProcessingError(msg)
             receipt = self.parser.parse(text, source="pdf")
         elif suffix in IMAGE_EXTENSIONS:
-            image = Image.open(path)
-            return self.process_image(image, fallback_date)
+            with Image.open(path) as image:
+                return self.process_image(image, fallback_date)
         else:
             msg = f"Unsupported file type: {suffix}"
             raise ReceiptProcessingError(msg)
@@ -103,7 +103,11 @@ class ReceiptHandler:
 
         Returns (is_valid, difference).
         """
-        items_sum = sum(item.total_price for item in receipt.items)
+        items_sum = sum(
+            (item.total_price for item in receipt.items),
+            start=Decimal("0"),
+        )
         diff = receipt.total - items_sum
         threshold = Decimal("0.02")
-        return abs(diff) <= threshold, diff
+        has_meaningful_content = bool(receipt.items) and receipt.total > 0
+        return has_meaningful_content and abs(diff) <= threshold, diff
