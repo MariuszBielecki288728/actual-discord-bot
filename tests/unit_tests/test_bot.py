@@ -5,7 +5,10 @@ import pytest
 
 import actual_discord_bot.bot as bot_module
 from actual_discord_bot import ActualDiscordBot
-from actual_discord_bot.bot import HELP_MESSAGE, STARTUP_MESSAGE
+from actual_discord_bot.bot import (
+    NOTIFICATION_HELP_MESSAGE,
+    RECEIPT_HELP_MESSAGE,
+)
 from actual_discord_bot.config import DiscordConfig
 from actual_discord_bot.errors import ParseNotificationError
 
@@ -324,8 +327,8 @@ async def test_on_ready_finds_bank_and_receipt_channels(bot):
 
     assert bot.target_channel is bank_channel
     assert bot.receipt_target_channel is receipt_channel
-    bank_channel.send.assert_awaited_once_with(STARTUP_MESSAGE)
-    receipt_channel.send.assert_awaited_once_with(STARTUP_MESSAGE)
+    bank_channel.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
+    receipt_channel.send.assert_awaited_once_with(RECEIPT_HELP_MESSAGE)
 
 
 @pytest.mark.asyncio
@@ -341,11 +344,11 @@ async def test_on_ready_only_sends_startup_help_once(bot):
         await bot.on_ready()
         await bot.on_ready()
 
-    bank_channel.send.assert_awaited_once_with(STARTUP_MESSAGE)
+    bank_channel.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
 
 
 @pytest.mark.asyncio
-async def test_startup_help_is_not_duplicated_for_shared_channel(bot):
+async def test_startup_help_sends_both_guides_for_shared_channel(bot):
     channel = AsyncMock(spec=discord.TextChannel)
     channel.id = 1
     channel.name = "shared"
@@ -354,14 +357,30 @@ async def test_startup_help_is_not_duplicated_for_shared_channel(bot):
 
     await bot._send_startup_help()  # noqa: SLF001
 
-    channel.send.assert_awaited_once_with(STARTUP_MESSAGE)
+    assert channel.send.await_args_list == [
+        ((NOTIFICATION_HELP_MESSAGE,), {}),
+        ((RECEIPT_HELP_MESSAGE,), {}),
+    ]
 
 
 @pytest.mark.asyncio
-async def test_help_command_sends_usage_guide(bot, ctx):
+async def test_help_command_sends_notification_guide(bot, ctx):
+    ctx.channel.id = 1
     await bot.help.callback(bot, ctx)
 
-    ctx.send.assert_awaited_once_with(HELP_MESSAGE)
+    ctx.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_help_command_sends_receipt_guide(bot, ctx):
+    receipt_channel = MagicMock(spec=discord.TextChannel)
+    receipt_channel.id = 2
+    bot.receipt_target_channel = receipt_channel
+    ctx.channel.id = 2
+
+    await bot.help.callback(bot, ctx)
+
+    ctx.send.assert_awaited_once_with(RECEIPT_HELP_MESSAGE)
 
 
 @pytest.mark.asyncio

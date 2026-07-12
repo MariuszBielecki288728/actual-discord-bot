@@ -22,27 +22,33 @@ REACTION_WARNING = "⚠️"
 MAX_ITEMS_IN_SUMMARY = 5
 MAX_RECEIPT_ATTACHMENT_BYTES = 10 * 1024 * 1024
 
-HELP_MESSAGE = """**Actual Budget bot — channel guide**
+NOTIFICATION_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget notification assistant.**
 
-I turn messages in the configured bank-notification channel into Actual Budget transactions. Currently I understand Bank Pekao card payments, incoming and outgoing transfers, and phone top-ups forwarded in this format:
+I watch this channel for bank notifications and turn them into transactions in Actual Budget. Currently I understand Bank Pekao card payments, incoming and outgoing transfers, and phone top-ups forwarded in this format:
 ```
 Title: <notification title>
 Text: <notification text>
 Timestamp: <timestamp>
 ```
-A ✅ means the transaction was saved. A message without ✅ was not imported; check the bot logs, correct the message if needed, and run `!catch_up`.
+A ✅ means the transaction was saved. A message without ✅ was not imported; check the bot logs, correct the cause if needed, and run `!catch_up`.
 
-In the configured receipts channel, attach one JPG, JPEG, PNG, WebP, or PDF receipt (maximum 10 MB). I extract the merchant, date, total, and items, then create one split transaction. I reply with the result and react with ✅ when created, ⚠️ for a duplicate or totals mismatch, and ❌ when processing fails. Receipt OCR is best-effort, so verify imported transactions in Actual Budget.
+**How notifications reach this channel**
+An administrator can create a Discord webhook for this channel in **Edit Channel → Integrations → Webhooks**. Its webhook URL is the special link that can post messages here—keep it private. On Android, an Automate flow can listen only for notifications from your bank app and send an HTTP POST to that URL, using `application/json` and the format above in the JSON `content` field. Never put your Discord bot token or Actual password in the flow or channel.
 
 **Commands**
-`!help` — show this guide
-`!catch_up` — retry every bank-channel message that does not already have my ✅
+`!help` — show this notification guide
+`!catch_up` — retry messages in this channel that do not already have my ✅"""
 
-Commands may be sent in either configured channel. I ignore other text in the receipts channel and unsupported attachments. Never post Actual or Discord passwords in a channel."""
+RECEIPT_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget receipt assistant.**
 
-STARTUP_MESSAGE = (
-    "I am online and watching this channel. Here is how to use me:\n\n" + HELP_MESSAGE
-)
+Attach one JPG, JPEG, PNG, WebP, or PDF receipt to this channel (maximum 10 MB). I extract the merchant, date, total, and product lines, then create one split transaction in Actual Budget.
+
+I react with ✅ and reply with a summary when a transaction is created. ⚠️ means I found a likely duplicate or the extracted item totals did not match the receipt total, so nothing was saved. ❌ means processing failed. Image text is read with OCR and may be imperfect; use a sharp, evenly lit, straight-on photo and always verify the result in Actual Budget. I ignore ordinary text and unsupported attachments.
+
+**Command**
+`!help` — show this receipt guide
+
+Receipts may contain sensitive information, so only post them in a private channel that is visible to people you trust."""
 
 
 class ActualDiscordBot(commands.Bot):
@@ -89,19 +95,17 @@ class ActualDiscordBot(commands.Bot):
 
     async def _send_startup_help(self) -> None:
         """Announce the bot once per process in every configured channel found."""
-        channels = {channel.id: channel for channel in self._followed_channels()}
-        for channel in channels.values():
+        channel_guides = (
+            (self.target_channel, NOTIFICATION_HELP_MESSAGE),
+            (self.receipt_target_channel, RECEIPT_HELP_MESSAGE),
+        )
+        for channel, guide in channel_guides:
+            if channel is None:
+                continue
             try:
-                await channel.send(STARTUP_MESSAGE)
+                await channel.send(guide)
             except (discord.Forbidden, discord.HTTPException) as error:
                 print(f"Could not send startup help to '{channel.name}': {error}")
-
-    def _followed_channels(self) -> tuple[discord.TextChannel, ...]:
-        return tuple(
-            channel
-            for channel in (self.target_channel, self.receipt_target_channel)
-            if channel is not None
-        )
 
     async def create_actual_transaction(self, message: discord.Message) -> bool:
         try:
@@ -280,8 +284,14 @@ class ActualDiscordBot(commands.Bot):
 
     @commands.command(name="help")
     async def help(self, ctx: commands.Context) -> None:
-        """Show the same usage guide posted when the bot starts."""
-        await ctx.send(HELP_MESSAGE)
+        """Show the guide for the channel where the command was sent."""
+        if (
+            self.receipt_target_channel
+            and ctx.channel.id == self.receipt_target_channel.id
+        ):
+            await ctx.send(RECEIPT_HELP_MESSAGE)
+        else:
+            await ctx.send(NOTIFICATION_HELP_MESSAGE)
 
 
 async def main() -> None:

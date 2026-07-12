@@ -180,10 +180,10 @@ docker compose --env-file deployment/lan/.env \
 docker compose -f deployment/lan/compose.yml logs -f bot
 ```
 
-When connected, the bot posts its usage guide in every configured channel. Send
-`!help` to retrieve it later. Post a receipt in the receipt channel or forward a
-test bank message, then verify both the Discord response and the transaction in
-Actual.
+When connected, the bot posts a friendly, channel-specific guide in every
+configured channel. Send `!help` to retrieve the appropriate guide later. Post a
+receipt in the receipt channel or forward a test bank message, then verify both
+the Discord response and the transaction in Actual.
 
 Useful operating commands:
 
