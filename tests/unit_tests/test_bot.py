@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import discord
 import pytest
 
+import actual_discord_bot.bot as bot_module
 from actual_discord_bot import ActualDiscordBot
 from actual_discord_bot.config import DiscordConfig
 from actual_discord_bot.errors import ParseNotificationError
@@ -301,3 +302,80 @@ async def test_on_message_ignores_own_messages():
         await bot.on_message(message)
         mock_bank.assert_not_called()
         mock_receipt.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_on_ready_finds_bank_and_receipt_channels(bot):
+    bank_channel = MagicMock(spec=discord.TextChannel)
+    bank_channel.name = "bank-notifications"
+    receipt_channel = MagicMock(spec=discord.TextChannel)
+    receipt_channel.name = "receipts"
+    guild = MagicMock()
+    guild.channels = [bank_channel, receipt_channel]
+    bot.receipt_channel_name = "receipts"
+
+    with patch.object(
+        type(bot), "guilds", new_callable=lambda: property(lambda _: [guild])
+    ):
+        await bot.on_ready()
+
+    assert bot.target_channel is bank_channel
+    assert bot.receipt_target_channel is receipt_channel
+
+
+@pytest.mark.asyncio
+async def test_on_ready_warns_when_bank_channel_is_not_found(bot, capsys):
+    guild = MagicMock()
+    guild.channels = []
+
+    with patch.object(
+        type(bot), "guilds", new_callable=lambda: property(lambda _: [guild])
+    ):
+        await bot.on_ready()
+
+    assert "Could not find channel 'bank-notifications'" in capsys.readouterr().out
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("receipt_channel", ["", "receipts"])
+async def test_main_configures_optional_receipt_handler(receipt_channel):
+    discord_config = MagicMock(receipt_channel=receipt_channel, token="token")
+    actual_config = MagicMock()
+    client = MagicMock()
+    client.start = AsyncMock()
+
+    with (
+        patch.object(
+            bot_module.DiscordConfig,
+            "from_environ",
+            return_value=discord_config,
+        ),
+        patch.object(
+            bot_module.ActualConfig,
+            "from_environ",
+            return_value=actual_config,
+        ),
+        patch.object(bot_module, "ActualConnector") as mock_connector,
+        patch.object(bot_module, "OCRConfig") as mock_ocr_config,
+        patch.object(bot_module, "create_ocr_provider") as mock_ocr_provider,
+        patch.object(bot_module, "ReceiptHandler") as mock_receipt_handler,
+        patch.object(bot_module, "ActualDiscordBot", return_value=client) as mock_bot,
+    ):
+        await bot_module.main()
+
+    client.start.assert_awaited_once_with("token")
+    if receipt_channel:
+        mock_ocr_config.from_environ.assert_called_once()
+        mock_ocr_provider.assert_called_once_with(
+            mock_ocr_config.from_environ.return_value
+        )
+        mock_receipt_handler.assert_called_once_with(
+            ocr_provider=mock_ocr_provider.return_value
+        )
+        assert mock_bot.call_args.args[2] is mock_receipt_handler.return_value
+    else:
+        mock_ocr_config.from_environ.assert_not_called()
+        mock_receipt_handler.assert_not_called()
+        assert mock_bot.call_args.args[2] is None
+
+    mock_connector.assert_called_once_with(actual_config)

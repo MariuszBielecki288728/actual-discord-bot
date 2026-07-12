@@ -5,7 +5,7 @@ import pytest
 
 from actual_discord_bot.receipts.handler import ReceiptHandler
 from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
-from actual_discord_bot.receipts.parser import ReceiptParser
+from actual_discord_bot.receipts.parser import ReceiptParser, _parse_decimal
 
 
 @pytest.fixture
@@ -419,3 +419,52 @@ class TestDiscountVariants:
         assert len(receipt.items) == 2
         assert receipt.items[1].is_discount is True
         assert receipt.items[1].total_price == Decimal("-0.50")
+
+
+class TestReceiptParserEdgeCases:
+    """Test malformed and incomplete receipt data does not produce items."""
+
+    def test_invalid_decimal_returns_zero(self):
+        assert _parse_decimal("not-a-price") == Decimal("0")
+
+    def test_invalid_dates_are_ignored(self, parser):
+        receipt = parser.parse("Store\n2026-99-99\n99.99.2026\n")
+
+        assert receipt.date is None
+
+    def test_unknown_store_when_only_blank_or_separator_lines(self, parser):
+        receipt = parser.parse("\n  \n---\n")
+
+        assert receipt.store_name == "Unknown"
+
+    def test_alt_product_line_uses_default_quantity(self, parser):
+        receipt = parser.parse(
+            "Store\nPARAGON FISKALNY\nMleko T * 3,50 3,50A\nSUMA PLN 3,50\n"
+        )
+
+        assert receipt.items == [
+            ReceiptItem(
+                name="Mleko",
+                quantity=Decimal("1"),
+                unit_price=Decimal("3.50"),
+                total_price=Decimal("3.50"),
+                vat_category="A",
+            )
+        ]
+
+    def test_digital_receipt_with_only_a_total_has_no_items(self, parser):
+        receipt = parser.parse("Podsumowanie zakupów\nCena w\n12,34\nSuma\n")
+
+        assert receipt.items == []
+        assert receipt.total == Decimal("12.34")
+
+    def test_digital_receipt_ignores_unpaired_price(self, parser):
+        receipt = parser.parse("Podsumowanie zakupów\nCena w\n12,34")
+
+        assert receipt.items == []
+        assert receipt.total == Decimal("0")
+
+    def test_digital_store_name_defaults_when_only_headers_are_present(self, parser):
+        receipt = parser.parse("Podsumowanie zakupów\nCena w")
+
+        assert receipt.store_name == "Unknown"

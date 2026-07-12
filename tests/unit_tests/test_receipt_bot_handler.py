@@ -72,6 +72,38 @@ class TestReceiptMessageHandler:
         mock_receipt_message.add_reaction.assert_called_with("✅")
 
     @pytest.mark.asyncio
+    async def test_receipt_summary_includes_overflow_count(
+        self, bot, mock_receipt_message
+    ):
+        """List only the first five items while reporting how many were omitted."""
+        items = [
+            ReceiptItem(
+                f"Item {number}",
+                Decimal("1"),
+                Decimal("1.00"),
+                Decimal("1.00"),
+            )
+            for number in range(6)
+        ]
+        parsed_receipt = ParsedReceipt(
+            store_name="Test Store",
+            items=items,
+            total=Decimal("6.00"),
+            date=date(2026, 4, 30),
+        )
+        bot.receipt_handler.process_image_bytes = MagicMock(return_value=parsed_receipt)
+        bot.receipt_handler.validate_receipt = MagicMock(
+            return_value=(True, Decimal("0"))
+        )
+
+        await bot.handle_receipt_message(mock_receipt_message)
+
+        reply_text = mock_receipt_message.reply.call_args[0][0]
+        assert "Item 0 (1.00)" in reply_text
+        assert "Item 5" not in reply_text
+        assert "+1 more" in reply_text
+
+    @pytest.mark.asyncio
     async def test_pdf_attachment_triggers_processing(self, bot):
         """Test that a PDF attachment triggers PDF processing."""
         message = AsyncMock(spec=discord.Message)

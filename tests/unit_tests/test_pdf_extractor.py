@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -35,3 +36,21 @@ class TestPDFExtractor:
         pdf_bytes = pdf_path.read_bytes()
         text = extractor.extract_text_from_bytes(pdf_bytes)
         assert len(text) > 0
+
+    def test_ignores_pages_without_extractable_text(self, extractor):
+        page_with_text = MagicMock()
+        page_with_text.extract_text.return_value = "First page"
+        empty_page = MagicMock()
+        empty_page.extract_text.return_value = None
+
+        with patch(
+            "actual_discord_bot.receipts.pdf_extractor.pdfplumber.open"
+        ) as mock_open:
+            mock_open.return_value.__enter__.return_value.pages = [
+                page_with_text,
+                empty_page,
+            ]
+
+            text = extractor.extract_text("receipt.pdf")
+
+        assert text == "First page"
