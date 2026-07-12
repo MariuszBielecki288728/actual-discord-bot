@@ -56,7 +56,7 @@ class TestBankNotificationDeduplication:
         assert result is existing_txn
         mock_find.assert_called_once_with(
             actual=mock_actual_manager,
-            amount=Decimal("23.48"),  # abs value
+            amount=Decimal("-23.48"),
             transaction_date=date(2026, 4, 30),
             account_name="Pekao",
         )
@@ -90,8 +90,8 @@ class TestBankNotificationDeduplication:
             imported_payee="Kaufland",
         )
 
-    def test_dedup_uses_absolute_amount(self, connector, mock_actual_manager):
-        """Ensure deduplication passes absolute amount (positive) to find_matching."""
+    def test_dedup_uses_signed_expense_amount(self, connector, mock_actual_manager):
+        """Ensure deduplication uses the signed expense amount."""
         transaction_data = ActualTransactionData(
             date=date(2026, 5, 1),
             account="Pekao",
@@ -111,13 +111,13 @@ class TestBankNotificationDeduplication:
 
         mock_find.assert_called_once_with(
             actual=mock_actual_manager,
-            amount=Decimal("50.00"),
+            amount=Decimal("-50.00"),
             transaction_date=date(2026, 5, 1),
             account_name="Pekao",
         )
 
-    def test_dedup_handles_positive_deposit(self, connector, mock_actual_manager):
-        """For deposits (positive amounts), dedup also uses absolute value."""
+    def test_does_not_dedup_positive_deposit(self, connector, mock_actual_manager):
+        """A deposit cannot be a receipt import and must not be deduplicated."""
         transaction_data = ActualTransactionData(
             date=date(2026, 5, 1),
             account="Pekao",
@@ -135,12 +135,7 @@ class TestBankNotificationDeduplication:
             ):
                 connector.save_transaction(transaction_data)
 
-        mock_find.assert_called_once_with(
-            actual=mock_actual_manager,
-            amount=Decimal("100.00"),
-            transaction_date=date(2026, 5, 1),
-            account_name="Pekao",
-        )
+        mock_find.assert_not_called()
 
     def test_save_transaction_commits(self, connector, mock_actual_manager):
         """Verify that save_transaction commits changes to sync with server."""

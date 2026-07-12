@@ -50,7 +50,8 @@ OCR_WEIGHTED_RE = re.compile(
 
 # Total line (flexible for OCR variations)
 TOTAL_RE = re.compile(
-    r"(?:SUMA|RAZEM|Suma|SU[MN]A|SWĄ)\s*:?\s*(?:PLN?|PL[NI]?)?\s+(?P<total>[\d]+[.,]\d{2})",
+    r"(?:SUMA|RAZEM|Suma|SU[MN]A|SWĄ)\s*:?\s*(?:[.:]\s*)*"
+    r"(?:PLN?|PL[NI]?)?\s*(?P<total>[\d]+[.,]\d{2})",
     re.IGNORECASE,
 )
 

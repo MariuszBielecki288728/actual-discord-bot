@@ -4,7 +4,7 @@ import pytest
 from actual import Actual
 from actual.queries import create_account
 
-ACTUAL_TEST_URL = os.environ.get("ACTUAL_TEST_URL", "http://localhost:12012")
+ACTUAL_TEST_URL = os.environ.get("ACTUAL_TEST_URL", "http://localhost:12013")
 
 
 @pytest.fixture

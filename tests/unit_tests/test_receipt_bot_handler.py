@@ -170,7 +170,7 @@ class TestReceiptMessageHandler:
         await bot.handle_receipt_message(message)
 
         message.add_reaction.assert_called_with("⚠️")
-        bot.actual_connector.save_receipt_transaction.assert_called_once()
+        bot.actual_connector.save_receipt_transaction.assert_not_called()
         # Check that warning is in the reply
         reply_text = message.reply.call_args[0][0]
         assert "mismatch" in reply_text.lower()

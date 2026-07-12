@@ -9,6 +9,8 @@ from actual.queries import create_splits, create_transaction, get_transactions
 
 from actual_discord_bot.receipts.models import ParsedReceipt
 
+ROUNDING_TOLERANCE = Decimal("0.02")
+
 
 def generate_receipt_imported_id(receipt: ParsedReceipt) -> str:
     """Generate a unique imported_id for a receipt-created transaction."""
@@ -39,7 +41,7 @@ def find_matching_transaction(
         start_date=start,
         end_date=end,
         account=account_name,
-        amount=-amount,  # Stored as negative (payment)
+        amount=amount,
     )
 
     # Return the first non-child transaction that matches
@@ -71,7 +73,7 @@ def create_receipt_split_transaction(
     # Deduplication: check if a matching transaction already exists
     existing = find_matching_transaction(
         actual=actual,
-        amount=receipt.total,
+        amount=-receipt.total,
         transaction_date=txn_date,
         account_name=account_name,
     )
@@ -91,9 +93,18 @@ def create_receipt_split_transaction(
         )
         sub_transactions.append(t)
 
-    # Handle rounding difference
+    # Only small differences are safe to represent as rounding.  Larger
+    # discrepancies mean the receipt was parsed incorrectly and must not be
+    # persisted as a misleading split transaction.
     items_sum = sum(item.total_price for item in receipt.items)
     diff = receipt.total - items_sum
+    if abs(diff) > ROUNDING_TOLERANCE:
+        msg = (
+            "Receipt item total differs from receipt total by "
+            f"{diff} PLN, exceeding the rounding tolerance"
+        )
+        raise ValueError(msg)
+
     if diff != Decimal("0"):
         rounding_txn = create_transaction(
             actual.session,

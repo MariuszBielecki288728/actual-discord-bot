@@ -2,6 +2,8 @@ from datetime import date
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
 from actual_discord_bot.receipts.transaction import (
     create_receipt_split_transaction,
@@ -189,6 +191,21 @@ class TestFindMatchingTransaction:
         assert call_kwargs["start_date"] == date(2026, 4, 29)
         assert call_kwargs["end_date"] == date(2026, 5, 4)
 
+    def test_uses_signed_amount(self):
+        mock_actual = MagicMock()
+
+        with patch(
+            "actual_discord_bot.receipts.transaction.get_transactions", return_value=[]
+        ) as mock_get:
+            find_matching_transaction(
+                actual=mock_actual,
+                amount=Decimal("-10.00"),
+                transaction_date=date(2026, 5, 1),
+                account_name="Account",
+            )
+
+        assert mock_get.call_args[1]["amount"] == Decimal("-10.00")
+
 
 class TestCreateReceiptSplitTransaction:
     """Test split transaction creation logic."""
@@ -331,3 +348,30 @@ class TestCreateReceiptSplitTransaction:
         last_call_kwargs = mock_create.call_args_list[2][1]
         assert last_call_kwargs["notes"] == "Zaokrąglenie"
         assert last_call_kwargs["amount"] == Decimal("-0.01")
+
+    def test_rejects_a_large_item_total_difference(self):
+        mock_actual = MagicMock()
+        receipt = ParsedReceipt(
+            store_name="Store",
+            items=[
+                ReceiptItem("A", Decimal("1"), Decimal("10.00"), Decimal("10.00")),
+            ],
+            total=Decimal("15.00"),
+            date=date(2026, 4, 30),
+        )
+
+        with patch(
+            "actual_discord_bot.receipts.transaction.find_matching_transaction",
+            return_value=None,
+        ):
+            with patch(
+                "actual_discord_bot.receipts.transaction.create_splits",
+            ) as mock_splits:
+                with pytest.raises(ValueError, match="rounding tolerance"):
+                    create_receipt_split_transaction(
+                        actual=mock_actual,
+                        receipt=receipt,
+                        account_name="TestAccount",
+                    )
+
+        mock_splits.assert_not_called()

@@ -9,7 +9,7 @@ from actual.queries import create_account, get_transactions
 from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
 from actual_discord_bot.receipts.transaction import create_receipt_split_transaction
 
-ACTUAL_TEST_URL = os.environ.get("ACTUAL_TEST_URL", "http://localhost:12012")
+ACTUAL_TEST_URL = os.environ.get("ACTUAL_TEST_URL", "http://localhost:12013")
 
 
 @pytest.fixture

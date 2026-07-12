@@ -172,6 +172,11 @@ class TestTotalExtraction:
         receipt = parser.parse(text)
         assert receipt.total == Decimal("25.99")
 
+    def test_suma_with_ocr_artifacts_before_currency(self, parser):
+        text = "Store\nPARAGON FISKALNY\nSUMA: . . PLN 231.30\n"
+        receipt = parser.parse(text)
+        assert receipt.total == Decimal("231.30")
+
 
 class TestReceiptLineParser:
     """Test individual line parsing patterns."""

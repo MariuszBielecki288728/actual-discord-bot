@@ -29,17 +29,17 @@ class ActualConnector:
         transaction_data: ActualTransactionData,
     ) -> Transactions:
         with self.actual_manager as actual:
-            # Deduplication: check if a receipt-created transaction already exists
-            # find_matching_transaction expects a positive amount (receipt total)
-            amount_abs = abs(Decimal(str(transaction_data.amount)))
-            existing = find_matching_transaction(
-                actual=actual,
-                amount=amount_abs,
-                transaction_date=transaction_data.date,
-                account_name=transaction_data.account,
-            )
-            if existing:
-                return existing
+            # Receipt imports are expenses. Do not deduplicate a deposit against
+            # an expense with the same absolute value.
+            if transaction_data.amount < 0:
+                existing = find_matching_transaction(
+                    actual=actual,
+                    amount=Decimal(str(transaction_data.amount)),
+                    transaction_date=transaction_data.date,
+                    account_name=transaction_data.account,
+                )
+                if existing:
+                    return existing
 
             transaction = create_transaction(
                 actual.session,
@@ -49,6 +49,8 @@ class ActualConnector:
                 imported_payee=transaction_data.imported_payee,
             )
             actual.commit()
+            actual.session.refresh(transaction)
+            actual.session.expunge(transaction)
             return transaction
 
     def save_receipt_transaction(

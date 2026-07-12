@@ -107,7 +107,6 @@ class ActualDiscordBot(commands.Bot):
                 return
 
             is_valid, diff = self.receipt_handler.validate_receipt(receipt)
-            self.actual_connector.save_receipt_transaction(receipt, fallback_date)
 
             items_summary = ", ".join(
                 f"{item.name} ({item.total_price})"
@@ -119,20 +118,21 @@ class ActualDiscordBot(commands.Bot):
                 else ""
             )
 
-            if is_valid:
-                await message.add_reaction(REACTION_EMOJI)
-            else:
+            if not is_valid:
                 await message.add_reaction(REACTION_WARNING)
+                await message.reply(
+                    "Receipt was not saved because of an item-total mismatch: "
+                    f"the receipt total differs by {diff} PLN.\n"
+                    f"Items: {items_summary}{more}",
+                )
+                return
 
-            warning = (
-                f"\n⚠️ Sum mismatch: items total differs from receipt by {diff} PLN"
-                if not is_valid
-                else ""
-            )
+            self.actual_connector.save_receipt_transaction(receipt, fallback_date)
+            await message.add_reaction(REACTION_EMOJI)
             await message.reply(
                 f"Created split transaction: **{receipt.store_name}**, "
                 f"{len(receipt.items)} items, {receipt.total} PLN\n"
-                f"Items: {items_summary}{more}{warning}",
+                f"Items: {items_summary}{more}",
             )
 
         except ReceiptProcessingError as e:
