@@ -1,6 +1,10 @@
 services:
   bot:
     build: .
+    restart: unless-stopped
+    depends_on:
+      actual_server:
+        condition: service_healthy
     volumes:
       - .:/app
     environment:
@@ -9,11 +13,12 @@ services:
       - ACTUAL_PASSWORD=${ACTUAL_PASSWORD}
       - ACTUAL_FILE=${ACTUAL_FILE}
       - ACTUAL_ACCOUNT=${ACTUAL_ACCOUNT:-Pekao}
+      - ACTUAL_ENCRYPTION_PASSWORD=${ACTUAL_ENCRYPTION_PASSWORD:-}
       - DISCORD_BANK_NOTIFICATION_CHANNEL=${DISCORD_BANK_NOTIFICATION_CHANNEL}
       - DISCORD_RECEIPT_CHANNEL=${DISCORD_RECEIPT_CHANNEL:-}
       - OCR_PROVIDER=${OCR_PROVIDER:-tesseract}
 
-    command: python -u actual_discord_bot/bot.py
+    command: python -u -m actual_discord_bot.bot
 
   actual_server:
     image: docker.io/actualbudget/actual-server:26.4.0
@@ -22,6 +27,12 @@ services:
     volumes:
       - ./actual-data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5006').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
   test_actual_server:
     image: docker.io/actualbudget/actual-server:26.4.0

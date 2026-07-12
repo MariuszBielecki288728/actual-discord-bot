@@ -5,6 +5,7 @@ import pytest
 
 import actual_discord_bot.bot as bot_module
 from actual_discord_bot import ActualDiscordBot
+from actual_discord_bot.bot import HELP_MESSAGE, STARTUP_MESSAGE
 from actual_discord_bot.config import DiscordConfig
 from actual_discord_bot.errors import ParseNotificationError
 
@@ -306,9 +307,11 @@ async def test_on_message_ignores_own_messages():
 
 @pytest.mark.asyncio
 async def test_on_ready_finds_bank_and_receipt_channels(bot):
-    bank_channel = MagicMock(spec=discord.TextChannel)
+    bank_channel = AsyncMock(spec=discord.TextChannel)
+    bank_channel.id = 1
     bank_channel.name = "bank-notifications"
-    receipt_channel = MagicMock(spec=discord.TextChannel)
+    receipt_channel = AsyncMock(spec=discord.TextChannel)
+    receipt_channel.id = 2
     receipt_channel.name = "receipts"
     guild = MagicMock()
     guild.channels = [bank_channel, receipt_channel]
@@ -321,6 +324,62 @@ async def test_on_ready_finds_bank_and_receipt_channels(bot):
 
     assert bot.target_channel is bank_channel
     assert bot.receipt_target_channel is receipt_channel
+    bank_channel.send.assert_awaited_once_with(STARTUP_MESSAGE)
+    receipt_channel.send.assert_awaited_once_with(STARTUP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_on_ready_only_sends_startup_help_once(bot):
+    bank_channel = AsyncMock(spec=discord.TextChannel)
+    bank_channel.id = 1
+    bank_channel.name = "bank-notifications"
+    guild = MagicMock(channels=[bank_channel])
+
+    with patch.object(
+        type(bot), "guilds", new_callable=lambda: property(lambda _: [guild])
+    ):
+        await bot.on_ready()
+        await bot.on_ready()
+
+    bank_channel.send.assert_awaited_once_with(STARTUP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_startup_help_is_not_duplicated_for_shared_channel(bot):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    channel.name = "shared"
+    bot.target_channel = channel
+    bot.receipt_target_channel = channel
+
+    await bot._send_startup_help()  # noqa: SLF001
+
+    channel.send.assert_awaited_once_with(STARTUP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_help_command_sends_usage_guide(bot, ctx):
+    await bot.help.callback(bot, ctx)
+
+    ctx.send.assert_awaited_once_with(HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_on_message_invokes_valid_command_instead_of_importing(bot):
+    message = AsyncMock(spec=discord.Message)
+    message.author = MagicMock()
+    context = MagicMock(valid=True)
+
+    with (
+        patch.object(type(bot), "user", new_callable=lambda: property(lambda _: None)),
+        patch.object(bot, "get_context", new=AsyncMock(return_value=context)),
+        patch.object(bot, "invoke", new=AsyncMock()) as invoke,
+        patch.object(bot, "handle_message", new=AsyncMock()) as handle_message,
+    ):
+        await bot.on_message(message)
+
+    invoke.assert_awaited_once_with(context)
+    handle_message.assert_not_awaited()
 
 
 @pytest.mark.asyncio
