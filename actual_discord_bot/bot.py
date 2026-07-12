@@ -103,9 +103,22 @@ class ActualDiscordBot(commands.Bot):
             if channel is None:
                 continue
             try:
+                if await self._has_recent_guide(channel, guide):
+                    continue
                 await channel.send(guide)
             except (discord.Forbidden, discord.HTTPException) as error:
                 print(f"Could not send startup help to '{channel.name}': {error}")
+
+    async def _has_recent_guide(
+        self,
+        channel: discord.TextChannel,
+        guide: str,
+    ) -> bool:
+        """Return whether this bot posted the current guide in the last 10 messages."""
+        async for message in channel.history(limit=10):
+            if message.author == self.user and message.content == guide:
+                return True
+        return False
 
     async def create_actual_transaction(self, message: discord.Message) -> bool:
         try:

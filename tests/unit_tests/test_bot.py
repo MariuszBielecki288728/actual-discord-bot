@@ -364,6 +364,62 @@ async def test_startup_help_sends_both_guides_for_shared_channel(bot):
 
 
 @pytest.mark.asyncio
+async def test_startup_help_skips_matching_guide_in_last_ten_messages(bot):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    channel.name = "bank-notifications"
+    bot.target_channel = channel
+    bot_user = MagicMock()
+    recent_guide = MagicMock(
+        author=bot_user,
+        content=NOTIFICATION_HELP_MESSAGE,
+    )
+    channel.history.return_value.__aiter__.return_value = [recent_guide]
+
+    with patch.object(
+        type(bot), "user", new_callable=lambda: property(lambda _: bot_user)
+    ):
+        await bot._send_startup_help()  # noqa: SLF001
+
+    channel.history.assert_called_once_with(limit=10)
+    channel.send.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_startup_help_posts_when_recent_guide_is_not_from_bot(bot):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    channel.name = "bank-notifications"
+    bot.target_channel = channel
+    recent_guide = MagicMock(
+        author=MagicMock(),
+        content=NOTIFICATION_HELP_MESSAGE,
+    )
+    channel.history.return_value.__aiter__.return_value = [recent_guide]
+
+    with patch.object(
+        type(bot), "user", new_callable=lambda: property(lambda _: MagicMock())
+    ):
+        await bot._send_startup_help()  # noqa: SLF001
+
+    channel.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
+async def test_startup_help_posts_when_bot_guide_is_older_than_history_window(bot):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    channel.name = "bank-notifications"
+    bot.target_channel = channel
+    channel.history.return_value.__aiter__.return_value = []
+
+    await bot._send_startup_help()  # noqa: SLF001
+
+    channel.history.assert_called_once_with(limit=10)
+    channel.send.assert_awaited_once_with(NOTIFICATION_HELP_MESSAGE)
+
+
+@pytest.mark.asyncio
 async def test_help_command_sends_notification_guide(bot, ctx):
     ctx.channel.id = 1
     await bot.help.callback(bot, ctx)
