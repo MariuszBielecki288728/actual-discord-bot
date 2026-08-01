@@ -1,8 +1,9 @@
 import decimal
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Self
+from typing import ClassVar, Self, cast
 
 from babel.numbers import parse_decimal
 
@@ -23,10 +24,11 @@ class BaseNotification:
     text: str
     bank: str
 
-    _message_regexes = (
+    _message_regexes: ClassVar[tuple[re.Pattern[str], ...]] = (
         re.compile(r"Title: (?P<title>.+)\nText: (?P<text>.+)\nTimestamp: .+"),
         re.compile(r"Title: (?P<title>.+)\nText: (?P<text>.+)\nBank: (?P<bank>.+)"),
     )
+    _notification_regexes: ClassVar[Sequence[NotificationTemplate]]
 
     @classmethod
     def from_message(cls, message: str) -> Self:
@@ -35,14 +37,14 @@ class BaseNotification:
         return cls(
             title=matched["title"],
             text=matched["text"],
-            bank=matched.get("bank") or getattr(cls, "bank", None),
+            bank=cast("str", matched.get("bank") or getattr(cls, "bank", "")),
         )
 
     @classmethod
     def _match_any_regex(
         cls,
         text: str,
-        regexes: list[re.Pattern],
+        regexes: Sequence[re.Pattern[str]],
     ) -> tuple[dict[str, str], int]:
         for index, regex in enumerate(regexes):
             if matched := regex.match(text):

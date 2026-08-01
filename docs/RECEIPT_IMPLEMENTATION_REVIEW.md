@@ -120,7 +120,7 @@
 | Module | Coverage | Target | Status |
 |--------|----------|--------|--------|
 | `receipts/transaction.py` | 100% | 90% | ✅ |
-| `receipts/handler.py` | 96% | 85% | ✅ |
+| `receipts/processor.py` | 96% | 85% | ✅ |
 | `receipts/parser.py` | 91% | 95% | ⚠️ (4% below, uncovered digital receipt edges) |
 | `receipts/ocr_provider.py` | 100% | 90% | ✅ |
 | `receipts/preprocessing.py` | 100% | 80% | ✅ |

@@ -64,7 +64,7 @@ an existing receipt.
 
 ```
 actual_discord_bot/
-├── bot.py                  # Discord bot: event handling, message routing
+├── bot.py                  # Discord lifecycle, commands, and handler routing
 ├── config.py               # Environment-based configuration (environ-config)
 ├── actual_connector.py     # Actual Budget API wrapper (actualpy)
 ├── dataclasses_definitions.py  # Transaction data models
@@ -73,8 +73,12 @@ actual_discord_bot/
 ├── bank_notifications/
 │   ├── base_notification.py    # Abstract base with regex matching logic
 │   └── pekao_notification.py   # Bank Pekao notification parser
+├── channel_handlers/
+│   ├── base.py                 # Configured-channel lifecycle behavior
+│   ├── notifications.py        # Bank-notification Discord workflow
+│   └── receipts.py             # Receipt-attachment Discord workflow
 └── receipts/
-    ├── handler.py          # Orchestrates receipt processing pipeline
+    ├── processor.py        # Receipt processing pipeline
     ├── models.py           # ParsedReceipt/ReceiptItem dataclasses
     ├── ocr_provider.py     # OCR abstraction (Tesseract, cloud providers)
     ├── parser.py           # Receipt text parser (regex-based)

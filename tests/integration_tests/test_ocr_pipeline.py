@@ -3,17 +3,17 @@ from pathlib import Path
 
 import pytest
 
-from actual_discord_bot.receipts.handler import ReceiptHandler
 from actual_discord_bot.receipts.ocr_provider import TesseractProvider
 from actual_discord_bot.receipts.parser import ReceiptParser
 from actual_discord_bot.receipts.pdf_extractor import PDFExtractor
+from actual_discord_bot.receipts.processor import ReceiptProcessor
 
 RECEIPTS_DIR = Path(__file__).parent.parent / "receipts"
 
 
 @pytest.fixture
 def handler():
-    return ReceiptHandler(
+    return ReceiptProcessor(
         ocr_provider=TesseractProvider(lang="pol", psm=6),
         parser=ReceiptParser(),
         pdf_extractor=PDFExtractor(),

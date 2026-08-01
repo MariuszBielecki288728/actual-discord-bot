@@ -7,6 +7,7 @@ from actual_discord_bot.receipts.ocr_provider import (
 from actual_discord_bot.receipts.parser import ReceiptParser
 from actual_discord_bot.receipts.pdf_extractor import PDFExtractor
 from actual_discord_bot.receipts.preprocessing import preprocess_image
+from actual_discord_bot.receipts.processor import ReceiptProcessor
 
 __all__ = [
     "OCRProvider",
@@ -14,6 +15,7 @@ __all__ = [
     "ParsedReceipt",
     "ReceiptItem",
     "ReceiptParser",
+    "ReceiptProcessor",
     "TesseractProvider",
     "create_ocr_provider",
     "preprocess_image",
