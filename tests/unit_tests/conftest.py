@@ -2,15 +2,15 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from actual_discord_bot.bot import ActualDiscordBot
-from actual_discord_bot.config import DiscordConfig
+from actual_discord_bot import ActualDiscordBot
+from actual_discord_bot.channel_handlers.notifications import NotificationChannelHandler
 
 
 @pytest.fixture
-def bot():
-    config = DiscordConfig(
-        token="token",
-        bank_notification_channel="bank-notifications",
-    )
-    mock_actual_connector = MagicMock()
-    return ActualDiscordBot(config, mock_actual_connector)
+def notification_handler():
+    return NotificationChannelHandler("bank-notifications", MagicMock())
+
+
+@pytest.fixture
+def bot(notification_handler):
+    return ActualDiscordBot(notification_handler)

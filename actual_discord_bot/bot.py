@@ -1,325 +1,110 @@
+"""Discord lifecycle, commands, and routing."""
+
 import asyncio
+import logging
+from typing import TYPE_CHECKING
 
 import discord
-from cogwatch import watch
+from cogwatch import watch  # type: ignore[import-untyped]
 from discord.ext import commands
 
 from actual_discord_bot.actual_connector import ActualConnector
-from actual_discord_bot.bank_notifications import PekaoNotification
+from actual_discord_bot.channel_handlers.notifications import NotificationChannelHandler
+from actual_discord_bot.channel_handlers.receipts import ReceiptChannelHandler
 from actual_discord_bot.config import ActualConfig, DiscordConfig
-from actual_discord_bot.errors import ParseNotificationError
-from actual_discord_bot.receipts.handler import (
-    IMAGE_EXTENSIONS,
-    PDF_EXTENSIONS,
-    ReceiptHandler,
-    ReceiptProcessingError,
-)
 from actual_discord_bot.receipts.ocr_provider import OCRConfig, create_ocr_provider
+from actual_discord_bot.receipts.processor import ReceiptProcessor
 
-REACTION_EMOJI = "✅"
-REACTION_ERROR = "❌"
-REACTION_WARNING = "⚠️"
-MAX_ITEMS_IN_SUMMARY = 5
-MAX_RECEIPT_ATTACHMENT_BYTES = 10 * 1024 * 1024
+if TYPE_CHECKING:
+    from actual_discord_bot.channel_handlers.base import BaseChannelHandler
 
-NOTIFICATION_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget notification assistant.**
-
-I watch this channel for bank notifications and turn them into transactions in Actual Budget. Currently I understand Bank Pekao card payments, incoming and outgoing transfers, and phone top-ups forwarded in this format:
-```
-Title: <notification title>
-Text: <notification text>
-Timestamp: <timestamp>
-```
-A ✅ means the transaction was saved. A message without ✅ was not imported; check the bot logs, correct the cause if needed, and run `!catch_up`.
-
-**How notifications reach this channel**
-An administrator can create a Discord webhook for this channel in **Edit Channel → Integrations → Webhooks**. Its webhook URL is the special link that can post messages here—keep it private. On Android, an Automate flow can listen only for notifications from your bank app and send an HTTP POST to that URL, using `application/json` and the format above in the JSON `content` field. Never put your Discord bot token or Actual password in the flow or channel.
-
-**Commands**
-`!help` — show this notification guide
-`!catch_up` — retry messages in this channel that do not already have my ✅"""
-
-RECEIPT_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget receipt assistant.**
-
-Attach one JPG, JPEG, PNG, WebP, or PDF receipt to this channel (maximum 10 MB). I extract the merchant, date, total, and product lines, then create one split transaction in Actual Budget.
-
-I react with ✅ and reply with a summary when a transaction is created. ⚠️ means I found a likely duplicate or the extracted item totals did not match the receipt total, so nothing was saved. ❌ means processing failed. Image text is read with OCR and may be imperfect; use a sharp, evenly lit, straight-on photo and always verify the result in Actual Budget. I ignore ordinary text and unsupported attachments.
-
-**Command**
-`!help` — show this receipt guide
-
-Receipts may contain sensitive information, so only post them in a private channel that is visible to people you trust."""
+LOGGER = logging.getLogger(__name__)
 
 
 class ActualDiscordBot(commands.Bot):
+    """Route Discord events to independently owned channel workflows."""
+
     def __init__(
         self,
-        config: DiscordConfig,
-        actual_connector: ActualConnector,
-        receipt_handler: ReceiptHandler | None = None,
+        notification_handler: NotificationChannelHandler,
+        receipt_handler: ReceiptChannelHandler | None = None,
     ) -> None:
-        self.channel_name = config.bank_notification_channel
-        self.receipt_channel_name = config.receipt_channel
-        self.actual_connector = actual_connector
-        self.receipt_handler = receipt_handler
-        self.receipt_processing_slots = asyncio.Semaphore(1)
-        self._startup_help_sent = False
-
         intents = discord.Intents.default()
         intents.message_content = True
         intents.members = True
         super().__init__(command_prefix="!", intents=intents, help_command=None)
-        self.target_channel: discord.TextChannel | None = None
-        self.receipt_target_channel: discord.TextChannel | None = None
+        self.notification_handler = notification_handler
+        self.receipt_handler = receipt_handler
+        self.handlers: tuple[BaseChannelHandler, ...] = tuple(
+            handler
+            for handler in (receipt_handler, notification_handler)
+            if handler is not None
+        )
 
     @watch(path="actual_discord_bot")
     async def on_ready(self) -> None:
-        for guild in self.guilds:
-            channel = discord.utils.get(guild.channels, name=self.channel_name)
-            if channel:
-                self.target_channel = channel
-            if self.receipt_channel_name:
-                receipt_channel = discord.utils.get(
-                    guild.channels, name=self.receipt_channel_name
-                )
-                if receipt_channel:
-                    self.receipt_target_channel = receipt_channel
-            if self.target_channel:
-                break
-        if not self.target_channel:
-            print(f"Warning: Could not find channel '{self.channel_name}'")
-
-        if not self._startup_help_sent:
-            await self._send_startup_help()
-            self._startup_help_sent = True
-
-    async def _send_startup_help(self) -> None:
-        """Announce the bot once per process in every configured channel found."""
-        channel_guides = (
-            (self.target_channel, NOTIFICATION_HELP_MESSAGE),
-            (self.receipt_target_channel, RECEIPT_HELP_MESSAGE),
-        )
-        for channel, guide in channel_guides:
-            if channel is None:
-                continue
-            try:
-                if await self._has_recent_guide(channel, guide):
-                    continue
-                await channel.send(guide)
-            except (discord.Forbidden, discord.HTTPException) as error:
-                print(f"Could not send startup help to '{channel.name}': {error}")
-
-    async def _has_recent_guide(
-        self,
-        channel: discord.TextChannel,
-        guide: str,
-    ) -> bool:
-        """Return whether this bot posted the current guide in the last 10 messages."""
-        async for message in channel.history(limit=10):
-            if message.author == self.user and message.content == guide:
-                return True
-        return False
-
-    async def create_actual_transaction(self, message: discord.Message) -> bool:
-        try:
-            notification = PekaoNotification.from_message(message.content)
-            transaction_data = notification.to_transaction()
-            self.actual_connector.save_transaction(transaction_data)
-        except ParseNotificationError:
-            print(
-                f"ParseNotificationError: Could not parse message {message.id} with content: {message.content}",
-            )
-            return False
-        except Exception as e:  # noqa: BLE001
-            print(f"Exception occurred while processing message {message.id}: {e}")
-            print(
-                f"Error processing message {message.id} with content {message.content}: {e}",
-            )
-            return False
-        else:
-            return True
-
-    async def handle_message(self, message: discord.Message) -> None:
-        if await self.create_actual_transaction(message):
-            await message.add_reaction(REACTION_EMOJI)
-
-    async def handle_receipt_message(self, message: discord.Message) -> None:
-        """Handle a receipt image/PDF posted to the receipts channel."""
-        if not self.receipt_handler:
-            return
-
-        attachment = self._get_receipt_attachment(message)
-        if not attachment:
-            return
-
-        try:
-            attachment_size = getattr(attachment, "size", None)
-            if (
-                isinstance(attachment_size, int)
-                and attachment_size > MAX_RECEIPT_ATTACHMENT_BYTES
-            ):
-                self._raise_attachment_too_large()
-
-            async with self.receipt_processing_slots:
-                await self._process_receipt_attachment(message, attachment)
-
-        except ReceiptProcessingError as e:
-            await message.add_reaction(REACTION_ERROR)
-            await message.reply(f"Could not process receipt: {e}")
-        except Exception as e:  # noqa: BLE001
-            print(f"Error processing receipt from message {message.id}: {e}")
-            await message.add_reaction(REACTION_ERROR)
-            await message.reply(
-                "An unexpected error occurred while processing the receipt."
-            )
-
-    async def _process_receipt_attachment(
-        self,
-        message: discord.Message,
-        attachment: discord.Attachment,
-    ) -> None:
-        """Parse and persist one receipt while the processing slot is held."""
-        file_bytes = await attachment.read()
-        if len(file_bytes) > MAX_RECEIPT_ATTACHMENT_BYTES:
-            self._raise_attachment_too_large()
-
-        suffix = "." + attachment.filename.rsplit(".", 1)[-1].lower()
-        fallback_date = message.created_at.date()
-
-        if suffix in PDF_EXTENSIONS:
-            receipt = await asyncio.to_thread(
-                self.receipt_handler.process_pdf_bytes,
-                file_bytes,
-                fallback_date,
-            )
-        elif suffix in IMAGE_EXTENSIONS:
-            receipt = await asyncio.to_thread(
-                self.receipt_handler.process_image_bytes,
-                file_bytes,
-                fallback_date,
-            )
-        else:
-            return
-
-        is_valid, diff = self.receipt_handler.validate_receipt(receipt)
-
-        items_summary = ", ".join(
-            f"{item.name} ({item.total_price})"
-            for item in receipt.items[:MAX_ITEMS_IN_SUMMARY]
-        )
-        more = (
-            f" +{len(receipt.items) - MAX_ITEMS_IN_SUMMARY} more"
-            if len(receipt.items) > MAX_ITEMS_IN_SUMMARY
-            else ""
-        )
-
-        if not is_valid:
-            await message.add_reaction(REACTION_WARNING)
-            await message.reply(
-                "Receipt was not saved because of an item-total mismatch: "
-                f"the receipt total differs by {diff} PLN.\n"
-                f"Items: {items_summary}{more}",
-            )
-            return
-
-        created = await asyncio.to_thread(
-            self.actual_connector.save_receipt_transaction,
-            receipt,
-            fallback_date,
-        )
-        if not created:
-            await message.add_reaction(REACTION_WARNING)
-            await message.reply(
-                f"Receipt already exists: **{receipt.store_name}**, "
-                f"{receipt.total} PLN. No transaction was created.",
-            )
-            return
-
-        await message.add_reaction(REACTION_EMOJI)
-        await message.reply(
-            f"Created split transaction: **{receipt.store_name}**, "
-            f"{len(receipt.items)} items, {receipt.total} PLN\n"
-            f"Items: {items_summary}{more}",
-        )
-
-    @staticmethod
-    def _raise_attachment_too_large() -> None:
-        msg = "Receipt attachment exceeds the 10 MB limit."
-        raise ReceiptProcessingError(msg)
-
-    @staticmethod
-    def _get_receipt_attachment(
-        message: discord.Message,
-    ) -> discord.Attachment | None:
-        """Get the first valid receipt attachment from a message."""
-        for attachment in message.attachments:
-            if "." not in attachment.filename:
-                continue
-            suffix = "." + attachment.filename.rsplit(".", 1)[-1].lower()
-            if suffix in IMAGE_EXTENSIONS or suffix in PDF_EXTENSIONS:
-                return attachment
-        return None
+        for handler in self.handlers:
+            handler.bind(self.guilds)
+        for handler in self.handlers:
+            await handler.announce_help(self.user)
 
     async def on_message(self, message: discord.Message) -> None:
         if message.author == self.user:
             return
-
         context = await self.get_context(message)
         if context.valid:
             await self.invoke(context)
             return
+        for handler in self.handlers:
+            if handler.matches(message.channel) and handler.accepts(message):
+                try:
+                    await handler.handle(message)
+                except Exception:
+                    LOGGER.exception(
+                        "Channel handler failed for message %s", message.id
+                    )
+                return
 
-        if self.target_channel and message.channel.id == self.target_channel.id:
-            await self.handle_message(message)
-        elif (
-            self.receipt_target_channel
-            and message.channel.id == self.receipt_target_channel.id
-        ):
-            await self.handle_receipt_message(message)
-
-    @commands.command(name="catch_up")
+    @commands.command(name="catch_up")  # type: ignore[type-var]
     async def catch_up(self, ctx: commands.Context) -> None:
-        if not self.target_channel:
-            await ctx.send(f"Error: Channel '{self.channel_name}' not found.")
-            return
+        """Retry notification messages that have not yet been imported."""
+        await self.notification_handler.catch_up(ctx)
 
-        async with ctx.typing():
-            processed_count = 0
-            async for message in self.target_channel.history(limit=None):
-                for reaction in message.reactions:
-                    if reaction.emoji == REACTION_EMOJI and reaction.me:
-                        break
-                else:
-                    await self.handle_message(message)
-                    processed_count += 1
-
-        await ctx.send(f"Catch-up complete. Processed {processed_count} messages.")
-
-    @commands.command(name="help")
+    @commands.command(name="help")  # type: ignore[type-var]
     async def help(self, ctx: commands.Context) -> None:
-        """Show the guide for the channel where the command was sent."""
-        if (
-            self.receipt_target_channel
-            and ctx.channel.id == self.receipt_target_channel.id
-        ):
-            await ctx.send(RECEIPT_HELP_MESSAGE)
-        else:
-            await ctx.send(NOTIFICATION_HELP_MESSAGE)
+        """Show the guide or guides for the current channel."""
+        matching_handlers = [
+            handler for handler in self.handlers if handler.matches(ctx.channel)
+        ]
+        if not matching_handlers:
+            matching_handlers = [self.notification_handler]
+        for handler in matching_handlers:
+            await ctx.send(handler.help_message)
 
 
 async def main() -> None:
-    discord_config = DiscordConfig.from_environ()
-    actual_config = ActualConfig.from_environ()
-
+    discord_config = DiscordConfig.from_environ()  # type: ignore[attr-defined]
+    actual_config = ActualConfig.from_environ()  # type: ignore[attr-defined]
     actual_connector = ActualConnector(actual_config)
-
+    actual_write_lock = asyncio.Lock()
+    notification_handler = NotificationChannelHandler(
+        discord_config.bank_notification_channel,
+        actual_connector,
+        actual_write_lock=actual_write_lock,
+    )
     receipt_handler = None
     if discord_config.receipt_channel:
-        ocr_config = OCRConfig.from_environ()
-        ocr_provider = create_ocr_provider(ocr_config)
-        receipt_handler = ReceiptHandler(ocr_provider=ocr_provider)
-
-    client = ActualDiscordBot(discord_config, actual_connector, receipt_handler)
+        ocr_provider = create_ocr_provider(
+            OCRConfig.from_environ()  # type: ignore[attr-defined]
+        )
+        receipt_processor = ReceiptProcessor(ocr_provider=ocr_provider)
+        receipt_handler = ReceiptChannelHandler(
+            discord_config.receipt_channel,
+            actual_connector,
+            receipt_processor,
+            actual_write_lock=actual_write_lock,
+        )
+    client = ActualDiscordBot(notification_handler, receipt_handler)
     await client.start(discord_config.token)
 
 

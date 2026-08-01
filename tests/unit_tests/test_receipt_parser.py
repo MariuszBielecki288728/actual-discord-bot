@@ -3,9 +3,9 @@ from decimal import Decimal
 
 import pytest
 
-from actual_discord_bot.receipts.handler import ReceiptHandler
 from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
 from actual_discord_bot.receipts.parser import ReceiptParser, _parse_decimal
+from actual_discord_bot.receipts.processor import ReceiptProcessor
 
 
 @pytest.fixture
@@ -240,7 +240,7 @@ class TestTotalValidation:
             total=Decimal("15.00"),
         )
 
-        is_valid, diff = ReceiptHandler.validate_receipt(receipt)
+        is_valid, diff = ReceiptProcessor.validate_receipt(receipt)
         assert is_valid is True
         assert diff == Decimal("0")
 
@@ -254,7 +254,7 @@ class TestTotalValidation:
             total=Decimal("15.00"),
         )
 
-        is_valid, diff = ReceiptHandler.validate_receipt(receipt)
+        is_valid, diff = ReceiptProcessor.validate_receipt(receipt)
         assert is_valid is True
         assert diff == Decimal("-0.01")
 
@@ -267,14 +267,14 @@ class TestTotalValidation:
             total=Decimal("15.00"),
         )
 
-        is_valid, diff = ReceiptHandler.validate_receipt(receipt)
+        is_valid, diff = ReceiptProcessor.validate_receipt(receipt)
         assert is_valid is False
         assert diff == Decimal("5.00")
 
     def test_empty_receipt_is_invalid(self):
         receipt = ParsedReceipt(store_name="Unknown")
 
-        is_valid, diff = ReceiptHandler.validate_receipt(receipt)
+        is_valid, diff = ReceiptProcessor.validate_receipt(receipt)
 
         assert is_valid is False
         assert diff == Decimal("0")

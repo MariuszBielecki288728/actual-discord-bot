@@ -8,12 +8,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PIL import Image
 
-from actual_discord_bot.receipts.handler import (
-    ReceiptHandler,
-    ReceiptProcessingError,
-)
 from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
 from actual_discord_bot.receipts.pdf_extractor import PDFExtractionError
+from actual_discord_bot.receipts.processor import (
+    ReceiptProcessingError,
+    ReceiptProcessor,
+)
 
 
 @pytest.fixture
@@ -39,13 +39,13 @@ def mock_pdf_extractor():
 
 @pytest.fixture
 def handler(mock_ocr, mock_pdf_extractor):
-    return ReceiptHandler(
+    return ReceiptProcessor(
         ocr_provider=mock_ocr,
         pdf_extractor=mock_pdf_extractor,
     )
 
 
-class TestReceiptHandlerProcessImage:
+class TestReceiptProcessorProcessImage:
     def test_process_image_bytes_calls_ocr(self, handler, mock_ocr):
         fake_image = Image.new("RGB", (100, 100))
         buf = io.BytesIO()
@@ -84,14 +84,14 @@ class TestReceiptHandlerProcessImage:
         image.__enter__.return_value = image
 
         with patch(
-            "actual_discord_bot.receipts.handler.Image.open",
+            "actual_discord_bot.receipts.processor.Image.open",
             return_value=image,
         ):
             with pytest.raises(ReceiptProcessingError, match="pixel limit"):
                 handler.process_image_bytes(b"image")
 
 
-class TestReceiptHandlerProcessPDF:
+class TestReceiptProcessorProcessPDF:
     def test_process_pdf_bytes_calls_extractor(self, handler, mock_pdf_extractor):
         receipt = handler.process_pdf_bytes(b"pdf_content")
 
@@ -124,7 +124,7 @@ class TestReceiptHandlerProcessPDF:
             handler.process_pdf_bytes(b"pdf")
 
 
-class TestReceiptHandlerValidation:
+class TestReceiptProcessorValidation:
     def test_validate_exact_match(self):
         receipt = ParsedReceipt(
             store_name="Store",
@@ -134,7 +134,7 @@ class TestReceiptHandlerValidation:
             ],
             total=Decimal("15.00"),
         )
-        is_valid, diff = ReceiptHandler.validate_receipt(receipt)
+        is_valid, diff = ReceiptProcessor.validate_receipt(receipt)
         assert is_valid is True
         assert diff == Decimal("0")
 
@@ -146,7 +146,7 @@ class TestReceiptHandlerValidation:
             ],
             total=Decimal("10.01"),
         )
-        is_valid, diff = ReceiptHandler.validate_receipt(receipt)
+        is_valid, diff = ReceiptProcessor.validate_receipt(receipt)
         assert is_valid is True
         assert diff == Decimal("0.01")
 
@@ -158,7 +158,7 @@ class TestReceiptHandlerValidation:
             ],
             total=Decimal("12.00"),
         )
-        is_valid, diff = ReceiptHandler.validate_receipt(receipt)
+        is_valid, diff = ReceiptProcessor.validate_receipt(receipt)
         assert is_valid is False
         assert diff == Decimal("2.00")
 
@@ -171,12 +171,12 @@ class TestReceiptHandlerValidation:
             ],
             total=Decimal("10.00"),
         )
-        is_valid, diff = ReceiptHandler.validate_receipt(receipt)
+        is_valid, diff = ReceiptProcessor.validate_receipt(receipt)
         assert is_valid is False
         assert diff == Decimal("-5.00")
 
 
-class TestReceiptHandlerProcessFile:
+class TestReceiptProcessorProcessFile:
     """Test process_file with different file types."""
 
     def test_process_pdf_file(self, handler, mock_pdf_extractor):

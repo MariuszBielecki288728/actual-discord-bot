@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 
 import environ
-import pytesseract
+import pytesseract  # type: ignore[import-untyped]
 from PIL import Image
 
 

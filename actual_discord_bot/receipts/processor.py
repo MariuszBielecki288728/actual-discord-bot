@@ -1,3 +1,5 @@
+"""Receipt parsing and validation pipeline."""
+
 import io
 from datetime import date
 from decimal import Decimal
@@ -24,7 +26,7 @@ class ReceiptProcessingError(Exception):
     """Raised when receipt processing fails."""
 
 
-class ReceiptHandler:
+class ReceiptProcessor:
     """Orchestrates the full receipt processing pipeline."""
 
     def __init__(
@@ -34,7 +36,7 @@ class ReceiptHandler:
         pdf_extractor: PDFExtractor | None = None,
     ) -> None:
         self.ocr_provider = ocr_provider or create_ocr_provider(
-            OCRConfig.from_environ()
+            OCRConfig.from_environ()  # type: ignore[attr-defined]
         )
         self.parser = parser or ReceiptParser()
         self.pdf_extractor = pdf_extractor or PDFExtractor()
@@ -42,7 +44,6 @@ class ReceiptHandler:
     def process_image_bytes(
         self, image_bytes: bytes, fallback_date: date | None = None
     ) -> ParsedReceipt:
-        """Process a receipt image from raw bytes."""
         with Image.open(io.BytesIO(image_bytes)) as image:
             self._validate_image_size(image)
             return self.process_image(image, fallback_date)
@@ -50,7 +51,6 @@ class ReceiptHandler:
     def process_image(
         self, image: Image.Image, fallback_date: date | None = None
     ) -> ParsedReceipt:
-        """Process a receipt image through OCR pipeline."""
         preprocessed = preprocess_image(image)
         text = self.ocr_provider.extract_text(preprocessed)
         if not text.strip():
@@ -64,7 +64,6 @@ class ReceiptHandler:
     def process_pdf_bytes(
         self, pdf_bytes: bytes, fallback_date: date | None = None
     ) -> ParsedReceipt:
-        """Process a PDF receipt from raw bytes."""
         try:
             text = self.pdf_extractor.extract_text_from_bytes(pdf_bytes)
         except PDFExtractionError as error:
@@ -80,10 +79,8 @@ class ReceiptHandler:
     def process_file(
         self, file_path: str | Path, fallback_date: date | None = None
     ) -> ParsedReceipt:
-        """Process a receipt file (image or PDF) from disk."""
         path = Path(file_path)
         suffix = path.suffix.lower()
-
         if suffix in PDF_EXTENSIONS:
             try:
                 text = self.pdf_extractor.extract_text(str(path))
@@ -100,7 +97,6 @@ class ReceiptHandler:
         else:
             msg = f"Unsupported file type: {suffix}"
             raise ReceiptProcessingError(msg)
-
         if receipt.date is None:
             receipt.date = fallback_date
         return receipt
@@ -113,16 +109,10 @@ class ReceiptHandler:
 
     @staticmethod
     def validate_receipt(receipt: ParsedReceipt) -> tuple[bool, Decimal]:
-        """
-        Validate that item prices sum to the receipt total.
-
-        Returns (is_valid, difference).
-        """
         items_sum = sum(
-            (item.total_price for item in receipt.items),
-            start=Decimal("0"),
+            (item.total_price for item in receipt.items), start=Decimal("0")
         )
         diff = receipt.total - items_sum
-        threshold = Decimal("0.02")
-        has_meaningful_content = bool(receipt.items) and receipt.total > 0
-        return has_meaningful_content and abs(diff) <= threshold, diff
+        return bool(receipt.items) and receipt.total > 0 and abs(diff) <= Decimal(
+            "0.02"
+        ), diff
