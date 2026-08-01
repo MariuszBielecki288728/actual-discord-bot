@@ -856,25 +856,18 @@ files = [
 
 [[package]]
 name = "environ-config"
-version = "24.1.0"
+version = "26.1.0"
 description = "Boilerplate-free configuration with env variables."
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.10"
 groups = ["main"]
 files = [
-    {file = "environ_config-24.1.0-py3-none-any.whl", hash = "sha256:f63c03ac6533cbf0836de988fb40dd330278bf6424734218f807d509ee835737"},
-    {file = "environ_config-24.1.0.tar.gz", hash = "sha256:473a25809b2199bcd2aab0d70c9ed9289d3ff4dfca16eec518a74c65f2a9f021"},
+    {file = "environ_config-26.1.0-py3-none-any.whl", hash = "sha256:e5920e1c25f301c252f2e7eff0d64538b78a668311d730492664ee39f746b7dc"},
+    {file = "environ_config-26.1.0.tar.gz", hash = "sha256:7fe80885d22dd50218664c1e4e2c098429129387ddbb6e51318a3883639ae8b4"},
 ]
 
 [package.dependencies]
-attrs = ">=17.4.0"
-
-[package.extras]
-aws = ["boto3"]
-cov = ["coverage[toml] (>=7.2.0)", "moto", "pytest"]
-dev = ["moto", "nox", "pre-commit", "pytest"]
-docs = ["boto3", "furo", "myst-parser", "sphinx", "sphinx-notfound-page"]
-tests = ["moto", "pytest"]
+attrs = ">=21.3.0"
 
 [[package]]
 name = "filelock"
@@ -2401,4 +2394,4 @@ propcache = ">=0.2.0"
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.13"
-content-hash = "cdeed0ccb66e6cf0e2a78baf74ee9f65abd849f0bcb96ea5dd5740cd8823adaa"
+content-hash = "efbd73c90c7170d7936c836713eca9467153d245524933a80ed053a1ab3e5cfa"
