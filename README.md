@@ -8,6 +8,13 @@
 
 A Discord bot that automatically creates transactions in [Actual Budget](https://actualbudget.org/) from bank push notifications forwarded via the [Automate](https://llamalab.com/automate/) app on Android, and from receipt photos/PDFs posted to a dedicated channel.
 
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — current component boundaries, message
+  routing, receipt processing, concurrency, and deduplication behavior
+- [Future improvements](docs/FUTURE_IMPROVEMENTS.md) — ideas that are not yet
+  implemented
+
 ## How It Works
 
 ### Bank Notifications
@@ -54,38 +61,16 @@ an existing receipt.
 - **Hot-reload** — Uses [cogwatch](https://github.com/robertwayne/cogwatch) for live code reloading during development
 - **Dockerized deployment** — Full Docker Compose setup with bot, Actual server, and integration test services
 
-### Planned
-- **Multi-bank support** — Extensible architecture for adding more bank notification formats
-- **Category assignment** — Pluggable pipeline for automatic product categorization
-- **Item name expansion** — Dictionary-based abbreviation expansion for receipt product names
-- **Cloud OCR providers** — AWS Textract and Google Cloud Vision as alternative OCR backends
-
 ## Architecture
 
-```
-actual_discord_bot/
-├── bot.py                  # Discord lifecycle, commands, and handler routing
-├── config.py               # Environment-based configuration (environ-config)
-├── actual_connector.py     # Actual Budget API wrapper (actualpy)
-├── dataclasses_definitions.py  # Transaction data models
-├── enums.py                # TransactionType enum (DEPOSIT/PAYMENT)
-├── errors.py               # Custom exceptions
-├── bank_notifications/
-│   ├── base_notification.py    # Abstract base with regex matching logic
-│   └── pekao_notification.py   # Bank Pekao notification parser
-├── channel_handlers/
-│   ├── base.py                 # Configured-channel lifecycle behavior
-│   ├── notifications.py        # Bank-notification Discord workflow
-│   └── receipts.py             # Receipt-attachment Discord workflow
-└── receipts/
-    ├── processor.py        # Receipt processing pipeline
-    ├── models.py           # ParsedReceipt/ReceiptItem dataclasses
-    ├── ocr_provider.py     # OCR abstraction (Tesseract, cloud providers)
-    ├── parser.py           # Receipt text parser (regex-based)
-    ├── pdf_extractor.py    # PDF text extraction (pdfplumber)
-    ├── preprocessing.py    # Image preprocessing for OCR
-    └── transaction.py      # Split transaction creation & deduplication
-```
+The bot is a thin Discord router around independently owned notification and
+receipt workflows. The receipt path further separates input processing, text
+parsing, and Actual Budget persistence. Both workflows share one connector and
+serialize writes with one asynchronous lock.
+
+See [Architecture](docs/ARCHITECTURE.md) for the authoritative design and current
+runtime behavior. Unimplemented extensions are tracked separately in
+[Future improvements](docs/FUTURE_IMPROVEMENTS.md).
 
 ## Home LAN Deployment
 
@@ -260,7 +245,7 @@ ACTUAL_ENCRYPTION_PASSWORD=             # Optional: E2E encryption password
 ACTUAL_ACCOUNT=Pekao                    # Account name for transactions
 
 # OCR (only needed if receipt_channel is set)
-OCR_PROVIDER=tesseract                  # tesseract (default) | textract | google_vision
+OCR_PROVIDER=tesseract                  # only supported backend; cloud providers are future work
 OCR_TESSERACT_LANG=pol                  # Tesseract language (default: pol)
 OCR_TESSERACT_PSM=6                     # Tesseract page segmentation mode (default: 6)
 ```
@@ -275,7 +260,7 @@ OCR_TESSERACT_PSM=6                     # Tesseract page segmentation mode (defa
 | `ACTUAL_FILE` | Yes | Budget file name or sync ID |
 | `ACTUAL_ENCRYPTION_PASSWORD` | No | File encryption password (if enabled) |
 | `ACTUAL_ACCOUNT` | No | Account name for transactions (default: `Pekao`) |
-| `OCR_PROVIDER` | No | OCR backend: `tesseract`, `textract`, or `google_vision` |
+| `OCR_PROVIDER` | No | OCR backend (default and currently supported value: `tesseract`) |
 | `OCR_TESSERACT_LANG` | No | Tesseract language pack (default: `pol`) |
 | `OCR_TESSERACT_PSM` | No | Page segmentation mode (default: `6`) |
 
