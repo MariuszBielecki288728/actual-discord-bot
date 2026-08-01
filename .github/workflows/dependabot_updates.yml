@@ -17,7 +17,8 @@ jobs:
         id: dependabot-metadata
         uses: dependabot/fetch-metadata@v3.1.0
 
-      - name: Enable auto-merge for Dependabot PRs
+      - name: Enable auto-merge for patch and minor updates
+        if: ${{ steps.dependabot-metadata.outputs.update-type == 'version-update:semver-patch' || steps.dependabot-metadata.outputs.update-type == 'version-update:semver-minor' }}
         run: gh pr merge --auto --merge "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
@@ -30,17 +31,10 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Approve major updates of development dependencies
-        if: ${{ steps.dependabot-metadata.outputs.update-type == 'version-update:semver-major' && steps.dependabot-metadata.outputs.dependency-type == 'direct:development' }}
-        run: gh pr review $PR_URL --approve -b "I'm **approving** this pull request because **it includes a major update of a dependency used only in development**"
-        env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Comment on major updates of non-development dependencies
-        if: ${{ steps.dependabot-metadata.outputs.update-type == 'version-update:semver-major' && steps.dependabot-metadata.outputs.dependency-type == 'direct:production' }}
+      - name: Comment on major updates
+        if: ${{ steps.dependabot-metadata.outputs.update-type == 'version-update:semver-major' }}
         run: |
-          gh pr comment $PR_URL --body "I'm **not approving** this PR because **it includes a major update of a dependency used in production**"
+          gh pr comment $PR_URL --body "I'm **not approving** this PR because **it includes a major update**"
           gh pr edit $PR_URL --add-label "requires-manual-qa"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
