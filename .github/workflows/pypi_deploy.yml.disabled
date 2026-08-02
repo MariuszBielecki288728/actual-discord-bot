@@ -1,4 +1,5 @@
-# This workflow deploys a new release on PyPI once a pull request is closed
+# Disabled pending a PyPI publishing fix. Rename this file back to
+# `pypi_deploy.yml` to re-enable the workflow.
 
 name: Deploy to PyPI
 
