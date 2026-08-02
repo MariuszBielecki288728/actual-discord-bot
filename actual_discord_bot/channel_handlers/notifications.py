@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import datetime
 from enum import StrEnum
 
 import discord
@@ -30,14 +31,14 @@ Timestamp: <timestamp>
 ```
 I react with ✅ and reply with a summary when a transaction is created. If a notification cannot be read or imported, I react with ❌ and reply with the reason. Unexpected import errors are logged for troubleshooting.
 
-`!catch_up` skips messages marked with my ✅ or ❌. To request a retry, add any reaction to the message; I will try it again and remove that reaction afterwards, whether the retry succeeds or fails.
+`!catch_up` skips messages marked with my ✅ or ❌. Add a lookback such as `!catch_up 2 days` to process only recent messages. To request a retry, add any reaction to the message; I will try it again and remove that reaction afterwards, whether the retry succeeds or fails.
 
 **How notifications reach this channel**
 An administrator can create a Discord webhook for this channel in **Edit Channel → Integrations → Webhooks**. Its webhook URL is the special link that can post messages here—keep it private. On Android, an Automate flow can listen only for notifications from your bank app and send an HTTP POST to that URL, using `application/json` and the format above in the JSON `content` field. Never put your Discord bot token or Actual password in the flow or channel.
 
 **Commands**
 `!help` — show this notification guide
-`!catch_up` — retry messages in this channel that do not already have my ✅"""
+`!catch_up [X hour(s)|X day(s)|X month(s)]` — retry messages in this channel that do not already have my ✅"""
 
 
 class MessageHandlingResult(StrEnum):
@@ -102,7 +103,9 @@ class NotificationChannelHandler(BaseChannelHandler):
                 self.actual_connector.save_transaction, transaction_data
             )
 
-    async def catch_up(self, ctx: commands.Context) -> None:
+    async def catch_up(
+        self, ctx: commands.Context, *, after: datetime | None = None
+    ) -> None:
         """Retry unmarked messages and messages explicitly marked by a user."""
         if self.channel is None:
             await ctx.send(f"Error: Channel '{self.channel_name}' not found.")
@@ -110,7 +113,10 @@ class NotificationChannelHandler(BaseChannelHandler):
 
         processed_count = 0
         async with ctx.typing():
-            async for message in self.channel.history(limit=None):
+            history_arguments: dict[str, datetime | None] = {"limit": None}
+            if after is not None:
+                history_arguments["after"] = after
+            async for message in self.channel.history(**history_arguments):
                 if not self._should_retry(message):
                     continue
                 try:

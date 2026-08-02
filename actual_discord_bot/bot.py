@@ -1,7 +1,10 @@
 """Discord lifecycle, commands, and routing."""
 
 import asyncio
+import calendar
 import logging
+import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,6 +23,18 @@ if TYPE_CHECKING:
     from actual_discord_bot.channel_handlers.base import BaseChannelHandler
 
 LOGGER = logging.getLogger(__name__)
+
+CATCH_UP_TIME_DELTA_ERROR = (
+    "Error: Invalid time delta. Use X hour(s), X day(s), or X month(s)."
+)
+_CATCH_UP_TIME_DELTA_PATTERN = re.compile(
+    r"(?P<count>[1-9]\d*)\s+(?P<unit>hours?|days?|months?)",
+    re.IGNORECASE,
+)
+
+
+class CatchUpTimeDeltaError(ValueError):
+    """Raised when a catch-up time delta does not use a supported format."""
 
 
 class ActualDiscordBot(commands.Bot):
@@ -40,8 +55,10 @@ class ActualDiscordBot(commands.Bot):
         self.receipt_handler = receipt_handler
         self.hot_reload = hot_reload
 
-        async def catch_up_command(ctx: commands.Context) -> None:
-            await self._catch_up(ctx)
+        async def catch_up_command(
+            ctx: commands.Context, *, time_delta: str = ""
+        ) -> None:
+            await self._catch_up(ctx, time_delta)
 
         async def help_command(ctx: commands.Context) -> None:
             await self._help(ctx)
@@ -92,9 +109,18 @@ class ActualDiscordBot(commands.Bot):
                     )
                 return
 
-    async def _catch_up(self, ctx: commands.Context) -> None:
+    async def _catch_up(self, ctx: commands.Context, time_delta: str = "") -> None:
         """Retry notification messages that have not yet been imported."""
-        await self.notification_handler.catch_up(ctx)
+        try:
+            after = parse_catch_up_after(time_delta, discord.utils.utcnow())
+        except CatchUpTimeDeltaError:
+            await ctx.send(CATCH_UP_TIME_DELTA_ERROR)
+            return
+
+        if after is None:
+            await self.notification_handler.catch_up(ctx)
+            return
+        await self.notification_handler.catch_up(ctx, after=after)
 
     async def _help(self, ctx: commands.Context) -> None:
         """Show the guide or guides for the current channel."""
@@ -105,6 +131,34 @@ class ActualDiscordBot(commands.Bot):
             matching_handlers = [self.notification_handler]
         for handler in matching_handlers:
             await ctx.send(handler.help_message)
+
+
+def parse_catch_up_after(time_delta: str, now: datetime) -> datetime | None:
+    """
+    Return the earliest message time for a catch-up time delta.
+
+    An empty argument means to process the full channel history. Months are
+    calendar months, clamped to the last valid day of the target month.
+    """
+    if not time_delta.strip():
+        return None
+
+    match = _CATCH_UP_TIME_DELTA_PATTERN.fullmatch(time_delta.strip())
+    if match is None:
+        raise CatchUpTimeDeltaError
+
+    count = int(match["count"])
+    unit = match["unit"].lower()
+    if unit.startswith("hour"):
+        return now - timedelta(hours=count)
+    if unit.startswith("day"):
+        return now - timedelta(days=count)
+
+    target_month_index = now.year * 12 + now.month - 1 - count
+    target_year, target_month_index = divmod(target_month_index, 12)
+    target_month = target_month_index + 1
+    target_day = min(now.day, calendar.monthrange(target_year, target_month)[1])
+    return now.replace(year=target_year, month=target_month, day=target_day)
 
 
 async def main() -> None:
