@@ -17,18 +17,21 @@ from actual_discord_bot.receipts.transaction import (
 class ActualConnector:
     def __init__(self, config: ActualConfig) -> None:
         self.config = config
-        self.actual_manager = Actual(
-            base_url=config.url,
-            password=config.password,
-            encryption_password=config.encryption_password,
-            file=config.file,
+
+    def _create_actual_manager(self) -> Actual:
+        """Create one disposable Actual client for a single import operation."""
+        return Actual(
+            base_url=self.config.url,
+            password=self.config.password,
+            encryption_password=self.config.encryption_password,
+            file=self.config.file,
         )
 
     def save_transaction(
         self,
         transaction_data: ActualTransactionData,
     ) -> Transactions:
-        with self.actual_manager as actual:
+        with self._create_actual_manager() as actual:
             # Receipt imports are expenses. Do not deduplicate a deposit against
             # an expense with the same absolute value.
             if transaction_data.amount < 0:
@@ -61,7 +64,7 @@ class ActualConnector:
         fallback_date: date | None = None,
     ) -> bool:
         """Create a split transaction from a parsed receipt."""
-        with self.actual_manager as actual:
+        with self._create_actual_manager() as actual:
             return create_receipt_split_transaction(
                 actual=actual,
                 receipt=receipt,
