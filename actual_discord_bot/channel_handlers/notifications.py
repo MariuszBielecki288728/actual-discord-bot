@@ -47,7 +47,8 @@ An administrator can create a Discord webhook for this channel in **Edit Channel
 **Commands**
 `!help` — show this notification guide
 `!catch_up [X hour(s)|X day(s)|X month(s)]` — retry messages in this channel that do not already have my ✅
-`!make_schedule [X day(s)|X week(s)|X month(s)|X year(s)]` — reply to a notification I marked ✅ to create a manual-approval recurring schedule. It defaults to monthly."""
+`!make_schedule [X day(s)|X week(s)|X month(s)|X year(s)]` — reply to a notification I marked ✅ to create a manual-approval recurring schedule. It defaults to monthly.
+`!clear_channel` — permanently delete all deletable messages in this watched channel. Requires your Manage Messages permission."""
 
 
 class MessageHandlingResult(StrEnum):

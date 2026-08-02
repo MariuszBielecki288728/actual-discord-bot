@@ -32,8 +32,9 @@ Attach one JPG, JPEG, PNG, WebP, or PDF receipt to this channel (maximum 10 MB).
 
 I react with ✅ and reply with a summary when a transaction is created. ⚠️ means I found a likely duplicate or the extracted item totals did not match the receipt total, so nothing was saved. ❌ means processing failed. Image text is read with OCR and may be imperfect; use a sharp, evenly lit, straight-on photo and always verify the result in Actual Budget. I ignore ordinary text and unsupported attachments.
 
-**Command**
+**Commands**
 `!help` — show this receipt guide
+`!clear_channel` — permanently delete all deletable messages in this watched channel. Requires your Manage Messages permission.
 
 Receipts may contain sensitive information, so only post them in a private channel that is visible to people you trust."""
 

@@ -40,8 +40,9 @@ Post exactly one bank-statement CSV, retaining the filename supplied by your ban
 
 I will select an unambiguous open Actual account automatically, or ask the uploader to choose one. Existing transactions are never changed; the reply contains only aggregate import counts. Bank statements are sensitive: keep this channel private and visible only to people you trust.
 
-**Command**
-`!help` — show this guide"""
+**Commands**
+`!help` — show this guide
+`!clear_channel` — permanently delete all deletable messages in this watched channel. Requires your Manage Messages permission."""
 
 
 class AccountSelectionView(discord.ui.View):

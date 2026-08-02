@@ -154,7 +154,7 @@ desired. This address is intentionally available only while connected to the LAN
 3. Copy the bot token into `DISCORD_TOKEN` in `deployment/lan/.env`. Treat it like
    a password and never commit the `.env` file.
 4. In the OAuth2 URL Generator, select the `bot` scope and grant **View Channels**,
-   **Send Messages**, **Read Message History**, **Add Reactions**, and
+   **Send Messages**, **Read Message History**, **Manage Messages**, **Add Reactions**, and
    **Attach Files**. Open the generated URL and invite the bot to your server.
 5. Create `bank-notifications` and, optionally, `receipts` and `bank-imports`
    text channels. Make `bank-imports` private: statements are sensitive. Give the
@@ -324,6 +324,7 @@ without hot reload rather than blocking Discord startup.
 |---------|-------------|
 | `!help` | Show the full channel guide, reactions, supported inputs, and commands |
 | `!catch_up [X hour(s)\|X day(s)\|X month(s)]` | Process all unprocessed messages in the notification channel, optionally limited to a lookback window |
+| `!clear_channel` | Permanently delete all deletable messages in the current watched channel, then report the count; requires the caller and bot to have **Manage Messages** |
 | `!make_schedule [X day(s)\|X week(s)\|X month(s)\|X year(s)]` | Reply to a bank notification marked ✅ to create an idempotent, never-ending schedule; defaults to every month and requires manual approval |
 
 `!make_schedule` uses the original transaction date, exact signed amount, account,

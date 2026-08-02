@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
@@ -9,8 +10,11 @@ import pytest
 import actual_discord_bot.bot as bot_module
 from actual_discord_bot import ActualDiscordBot
 from actual_discord_bot.bot import (
+    BULK_DELETE_SAFE_AGE,
     CATCH_UP_TIME_DELTA_ERROR,
     CatchUpTimeDeltaError,
+    ClearChannelResult,
+    delete_channel_history,
     parse_catch_up_after,
 )
 from actual_discord_bot.channel_handlers.bank_imports import BankImportChannelHandler
@@ -29,6 +33,23 @@ def _channel(identifier: int, name: str):
     channel.id = identifier
     channel.name = name
     return channel
+
+
+def _history(messages):
+    async def iterator():
+        for message in messages:
+            yield message
+
+    return iterator()
+
+
+def _message(identifier: int, created_at: datetime, *, deletable: bool = True):
+    message = MagicMock(spec=discord.Message)
+    message.id = identifier
+    message.created_at = created_at
+    message.type.is_deletable.return_value = deletable
+    message.delete = AsyncMock()
+    return message
 
 
 @pytest.mark.asyncio
@@ -92,7 +113,7 @@ async def test_setup_hook_starts_hot_reload_when_source_tree_exists(
 
 
 def test_registers_commands_without_self_parameter(bot):
-    for name in ("catch_up", "help", "make_schedule"):
+    for name in ("catch_up", "clear_channel", "help", "make_schedule"):
         command = bot.get_command(name)
         assert command is not None
         assert "self" not in command.params
@@ -103,6 +124,207 @@ def test_registers_commands_without_self_parameter(bot):
     make_schedule = bot.get_command("make_schedule")
     assert make_schedule is not None
     assert "time_delta" in make_schedule.params
+
+
+@pytest.mark.asyncio
+async def test_clear_channel_rejects_an_unwatched_channel(bot):
+    ctx = AsyncMock()
+    ctx.channel = _channel(10, "unwatched")
+
+    command = bot.get_command("clear_channel")
+    assert command is not None
+    await command.callback(ctx)
+
+    ctx.send.assert_awaited_once_with(
+        "Error: This command can only be used in a configured watched channel."
+    )
+
+
+@pytest.mark.asyncio
+async def test_clear_channel_requires_caller_manage_messages_permission(bot):
+    channel = _channel(1, "bank-notifications")
+    bot.notification_handler.channel = channel
+    ctx = AsyncMock()
+    ctx.channel = channel
+    ctx.author = MagicMock(spec=discord.Member)
+    channel.permissions_for.return_value.manage_messages = False
+
+    command = bot.get_command("clear_channel")
+    assert command is not None
+    await command.callback(ctx)
+
+    ctx.send.assert_awaited_once_with(
+        "Error: You need the Manage Messages permission to clear this channel."
+    )
+
+
+@pytest.mark.asyncio
+async def test_clear_channel_rejects_a_non_text_watched_channel(bot):
+    channel = MagicMock()
+    channel.id = 1
+    bot.notification_handler.channel = channel
+    ctx = AsyncMock()
+    ctx.channel = channel
+    ctx.author = MagicMock(spec=discord.Member)
+
+    command = bot.get_command("clear_channel")
+    assert command is not None
+    await command.callback(ctx)
+
+    ctx.send.assert_awaited_once_with(
+        "Error: This command can only be used in a server text channel."
+    )
+
+
+@pytest.mark.asyncio
+async def test_clear_channel_deletes_watched_history_and_reports_count(bot):
+    channel = _channel(1, "bank-notifications")
+    bot.notification_handler.channel = channel
+    ctx = AsyncMock()
+    ctx.channel = channel
+    ctx.author = MagicMock(spec=discord.Member)
+    channel.permissions_for.return_value.manage_messages = True
+
+    with patch.object(
+        bot_module,
+        "delete_channel_history",
+        new=AsyncMock(return_value=ClearChannelResult(3, incomplete=False)),
+    ) as delete_history:
+        command = bot.get_command("clear_channel")
+        assert command is not None
+        await command.callback(ctx)
+
+    delete_history.assert_awaited_once_with(channel)
+    ctx.send.assert_awaited_once_with("Channel cleared. Deleted 3 messages.")
+
+
+@pytest.mark.asyncio
+async def test_clear_channel_reports_a_partial_result(bot):
+    channel = _channel(1, "bank-notifications")
+    bot.notification_handler.channel = channel
+    ctx = AsyncMock()
+    ctx.channel = channel
+    ctx.author = MagicMock(spec=discord.Member)
+    channel.permissions_for.return_value.manage_messages = True
+
+    with patch.object(
+        bot_module,
+        "delete_channel_history",
+        new=AsyncMock(return_value=ClearChannelResult(2, incomplete=True)),
+    ):
+        command = bot.get_command("clear_channel")
+        assert command is not None
+        await command.callback(ctx)
+
+    ctx.send.assert_awaited_once_with("Channel clear incomplete. Deleted 2 messages.")
+
+
+@pytest.mark.asyncio
+async def test_clear_channel_serializes_deletion_in_one_channel(bot):
+    channel = _channel(1, "bank-notifications")
+    bot.notification_handler.channel = channel
+    first_deletion_started = asyncio.Event()
+    release_first_deletion = asyncio.Event()
+    calls = 0
+
+    async def delete_history(_channel):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            first_deletion_started.set()
+            await release_first_deletion.wait()
+        return ClearChannelResult(0, incomplete=False)
+
+    def context():
+        ctx = AsyncMock()
+        ctx.channel = channel
+        ctx.author = MagicMock(spec=discord.Member)
+        return ctx
+
+    channel.permissions_for.return_value.manage_messages = True
+    first_context = context()
+    second_context = context()
+    command = bot.get_command("clear_channel")
+    assert command is not None
+
+    with patch.object(bot_module, "delete_channel_history", new=delete_history):
+        first_task = asyncio.create_task(command.callback(first_context))
+        await first_deletion_started.wait()
+        second_task = asyncio.create_task(command.callback(second_context))
+        await asyncio.sleep(0)
+        assert calls == 1
+        release_first_deletion.set()
+        await asyncio.gather(first_task, second_task)
+
+    assert calls == 2
+
+
+@pytest.mark.asyncio
+async def test_delete_channel_history_batches_recent_messages_and_deletes_old_ones(bot):
+    now = datetime(2026, 8, 2, 15, 30, tzinfo=UTC)
+    channel = _channel(1, "bank-notifications")
+    recent_messages = [
+        _message(1, now - timedelta(days=1)),
+        _message(2, now - timedelta(days=2)),
+    ]
+    old_message = _message(3, now - timedelta(days=15))
+    channel.history.return_value = _history([*recent_messages, old_message])
+
+    with patch.object(bot_module.discord.utils, "utcnow", return_value=now):
+        result = await delete_channel_history(channel)
+
+    assert result == ClearChannelResult(3, incomplete=False)
+    channel.delete_messages.assert_awaited_once_with(recent_messages)
+    old_message.delete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_channel_history_splits_batches_at_one_hundred_messages(bot):
+    now = datetime(2026, 8, 2, 15, 30, tzinfo=UTC)
+    channel = _channel(1, "bank-notifications")
+    messages = [_message(index, now) for index in range(101)]
+    channel.history.return_value = _history(messages)
+
+    with patch.object(bot_module.discord.utils, "utcnow", return_value=now):
+        result = await delete_channel_history(channel)
+
+    assert result == ClearChannelResult(101, incomplete=False)
+    assert len(channel.delete_messages.await_args.args[0]) == 100
+    messages[-1].delete.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_channel_history_reports_non_deletable_messages_as_incomplete(bot):
+    now = datetime(2026, 8, 2, 15, 30, tzinfo=UTC)
+    channel = _channel(1, "bank-notifications")
+    deletable = _message(1, now)
+    non_deletable = _message(2, now, deletable=False)
+    channel.history.return_value = _history([deletable, non_deletable])
+
+    with patch.object(bot_module.discord.utils, "utcnow", return_value=now):
+        result = await delete_channel_history(channel)
+
+    assert result == ClearChannelResult(1, incomplete=True)
+    deletable.delete.assert_awaited_once()
+    non_deletable.delete.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_delete_channel_history_reports_successful_deletions_before_an_api_error(bot):
+    now = datetime(2026, 8, 2, 15, 30, tzinfo=UTC)
+    channel = _channel(1, "bank-notifications")
+    old_message = _message(1, now - BULK_DELETE_SAFE_AGE - timedelta(days=1))
+    failing_message = _message(2, now - BULK_DELETE_SAFE_AGE - timedelta(days=2))
+    failing_message.delete.side_effect = discord.HTTPException(
+        MagicMock(status=500, reason="server error"), "server error"
+    )
+    channel.history.return_value = _history([old_message, failing_message])
+
+    with patch.object(bot_module.discord.utils, "utcnow", return_value=now):
+        result = await delete_channel_history(channel)
+
+    assert result == ClearChannelResult(1, incomplete=True)
+    old_message.delete.assert_awaited_once()
 
 
 @pytest.mark.asyncio
