@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -43,6 +44,43 @@ async def test_on_ready_binds_all_handlers_across_guilds_and_announces(bot):
 
     assert bot.notification_handler.channel is notification_channel
     assert receipt_handler.channel is receipt_channel
+
+
+@pytest.mark.asyncio
+async def test_setup_hook_skips_hot_reload_by_default(bot):
+    with patch.object(bot_module, "Watcher") as watcher:
+        await bot.setup_hook()
+
+    watcher.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_setup_hook_warns_and_continues_when_source_tree_is_missing(
+    notification_handler, monkeypatch, tmp_path, caplog
+):
+    bot = ActualDiscordBot(notification_handler, hot_reload=True)
+    monkeypatch.chdir(tmp_path)
+
+    with caplog.at_level(logging.WARNING, logger=bot_module.LOGGER.name):
+        await bot.setup_hook()
+
+    assert "continuing without it" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_setup_hook_starts_hot_reload_when_source_tree_exists(
+    notification_handler, monkeypatch, tmp_path
+):
+    (tmp_path / "actual_discord_bot").mkdir()
+    bot = ActualDiscordBot(notification_handler, hot_reload=True)
+    monkeypatch.chdir(tmp_path)
+    watcher = MagicMock(start=AsyncMock())
+
+    with patch.object(bot_module, "Watcher", return_value=watcher) as watcher_factory:
+        await bot.setup_hook()
+
+    watcher_factory.assert_called_once_with(bot, path="actual_discord_bot")
+    watcher.start.assert_awaited_once()
 
 
 def test_registers_commands(bot):
@@ -152,7 +190,10 @@ async def test_catch_up_delegates_to_notification_handler(bot):
 @pytest.mark.parametrize("receipt_channel", ["", "receipts"])
 async def test_main_configures_optional_receipt_stack(receipt_channel):
     discord_config = MagicMock(
-        receipt_channel=receipt_channel, bank_notification_channel="bank", token="token"
+        receipt_channel=receipt_channel,
+        bank_notification_channel="bank",
+        token="token",
+        hot_reload=False,
     )
     client = MagicMock(start=AsyncMock())
     with (
@@ -170,6 +211,7 @@ async def test_main_configures_optional_receipt_stack(receipt_channel):
     ):
         await bot_module.main()
     client.start.assert_awaited_once_with("token")
+    assert discord_bot.call_args.kwargs["hot_reload"] is False
     if receipt_channel:
         processor.assert_called_once()
         assert discord_bot.call_args.args[1] is not None

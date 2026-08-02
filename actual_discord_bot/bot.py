@@ -2,10 +2,11 @@
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import discord
-from cogwatch import watch  # type: ignore[import-untyped]
+from cogwatch import Watcher  # type: ignore[import-untyped]
 from discord.ext import commands
 
 from actual_discord_bot.actual_connector import ActualConnector
@@ -28,6 +29,8 @@ class ActualDiscordBot(commands.Bot):
         self,
         notification_handler: NotificationChannelHandler,
         receipt_handler: ReceiptChannelHandler | None = None,
+        *,
+        hot_reload: bool = False,
     ) -> None:
         intents = discord.Intents.default()
         intents.message_content = True
@@ -35,6 +38,7 @@ class ActualDiscordBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=None)
         self.notification_handler = notification_handler
         self.receipt_handler = receipt_handler
+        self.hot_reload = hot_reload
         self.add_command(self.catch_up)
         self.add_command(self.help)
         self.handlers: tuple[BaseChannelHandler, ...] = tuple(
@@ -43,7 +47,21 @@ class ActualDiscordBot(commands.Bot):
             if handler is not None
         )
 
-    @watch(path="actual_discord_bot")
+    async def setup_hook(self) -> None:
+        """Start development hot reload only when its watched source tree exists."""
+        if not self.hot_reload:
+            return
+
+        source_path = Path("actual_discord_bot")
+        if not source_path.is_dir():
+            LOGGER.warning(
+                "Discord hot reload is enabled but %s does not exist; continuing without it",
+                source_path.resolve(),
+            )
+            return
+
+        await Watcher(self, path=str(source_path)).start()
+
     async def on_ready(self) -> None:
         for handler in self.handlers:
             handler.bind(self.guilds)
@@ -106,7 +124,11 @@ async def main() -> None:
             receipt_processor,
             actual_write_lock=actual_write_lock,
         )
-    client = ActualDiscordBot(notification_handler, receipt_handler)
+    client = ActualDiscordBot(
+        notification_handler,
+        receipt_handler,
+        hot_reload=discord_config.hot_reload,
+    )
     await client.start(discord_config.token)
 
 
