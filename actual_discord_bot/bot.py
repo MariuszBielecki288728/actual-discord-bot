@@ -35,6 +35,8 @@ class ActualDiscordBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=None)
         self.notification_handler = notification_handler
         self.receipt_handler = receipt_handler
+        self.add_command(self.catch_up)
+        self.add_command(self.help)
         self.handlers: tuple[BaseChannelHandler, ...] = tuple(
             handler
             for handler in (receipt_handler, notification_handler)
