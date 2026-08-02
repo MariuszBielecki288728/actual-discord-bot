@@ -74,6 +74,7 @@ must be private.
 - **Transaction deduplication** — Prevents duplicate transactions when both a receipt and bank notification arrive for the same purchase
 - **Split transactions** — Each product line item becomes a sub-transaction in Actual Budget
 - **Discount handling** — Recognizes OBNIŻKA/RABAT/UPUST discount lines and includes them as negative sub-transactions
+- **Recurring schedules from notifications** — Reply `!make_schedule` (or, for example, `!make_schedule 2 months`) to a successfully imported bank notification to create one never-ending Actual schedule that requires manual approval
 - **Idempotent catch-up** — `!catch_up` processes all unprocessed messages in the channel (skips already-reacted ones), or accepts a lookback such as `!catch_up 2 days`
 - **In-channel guidance** — Posts a complete usage guide on startup and provides it on demand with `!help`
 - **Hot-reload** — Uses [cogwatch](https://github.com/robertwayne/cogwatch) only in the development Compose stack
@@ -265,7 +266,8 @@ DISCORD_BANK_IMPORT_CHANNEL=bank-imports  # optional private channel for stateme
 DISCORD_RECEIPT_CHANNEL=receipts                      # optional: channel for receipt photos/PDFs
 DISCORD_HOT_RELOAD=false                              # development-only source watcher
 
-# Bank CSV import (only used when DISCORD_BANK_IMPORT_CHANNEL is set)
+# Bank notification and CSV import timezones
+BANK_NOTIFICATION_TIMEZONE=Europe/Warsaw  # forwarded timestamps and schedule dates
 BANK_IMPORT_TIMEZONE=Europe/Warsaw  # calendar-month boundary timezone
 
 # Actual Budget
@@ -288,6 +290,7 @@ OCR_TESSERACT_PSM=6                     # Tesseract page segmentation mode (defa
 | `DISCORD_BANK_IMPORT_CHANNEL` | No | Private channel for one-file bank CSV imports |
 | `DISCORD_RECEIPT_CHANNEL` | No | Name of the channel for receipt photos/PDFs |
 | `DISCORD_HOT_RELOAD` | No | Enable source watching in a development checkout (default: `false`) |
+| `BANK_NOTIFICATION_TIMEZONE` | No | IANA timezone used for forwarded notification timestamps and schedules (default: `Europe/Warsaw`) |
 | `BANK_IMPORT_TIMEZONE` | No | IANA timezone for bank-import calendar months (default: `Europe/Warsaw`) |
 | `ACTUAL_URL` | Yes | Actual Budget server URL |
 | `ACTUAL_PASSWORD` | Yes | Actual server password |
@@ -321,6 +324,15 @@ without hot reload rather than blocking Discord startup.
 |---------|-------------|
 | `!help` | Show the full channel guide, reactions, supported inputs, and commands |
 | `!catch_up [X hour(s)\|X day(s)\|X month(s)]` | Process all unprocessed messages in the notification channel, optionally limited to a lookback window |
+| `!make_schedule [X day(s)\|X week(s)\|X month(s)\|X year(s)]` | Reply to a bank notification marked ✅ to create an idempotent, never-ending schedule; defaults to every month and requires manual approval |
+
+`!make_schedule` uses the original transaction date, exact signed amount, account,
+and trimmed payee. It accepts a positive integer plus one supported calendar unit;
+for example, `!make_schedule 2 weeks`. The source message must be in the bank
+notification channel and already carry the bot's ✅ success reaction. A schedule
+with the same case-insensitive payee name is left unchanged, so rerunning the
+command is safe. Actual does not retroactively link the source transaction;
+future matching imports may be linked by the generated schedule rule.
 
 ### Discord Channel Setup
 

@@ -29,7 +29,9 @@ class PekaoNotification(BaseNotification):
         ),
         NotificationTemplate(
             re.compile(
-                r"Zapłacono kwotę (?P<amount>.+) PLN kartą .+ dnia .+ w (?P<payee>.+)\. Bank Pekao S\.A\.",
+                r"Zapłacono kwotę (?P<amount>.+) PLN kartą .+ dnia "
+                r"(?P<transaction_date>\d{2}-\d{2}-\d{4}).+ w (?P<payee>.+)\. "
+                r"Bank Pekao S\.A\.",
             ),
             TransactionType.PAYMENT,
         ),

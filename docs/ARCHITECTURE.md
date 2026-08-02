@@ -47,7 +47,8 @@ The main components have deliberately narrow responsibilities:
 - `BaseChannelHandler` owns configured-channel binding and startup help shared
   by every channel workflow.
 - `NotificationChannelHandler` owns bank-message parsing, notification imports,
-  success reactions, and catch-up processing.
+  success reactions, catch-up processing, and creation of recurring schedules
+  from successful notification replies.
 - `ReceiptChannelHandler` owns attachment selection and limits, Discord
   reactions/replies, receipt-processing concurrency, and receipt persistence.
 - `BankImportChannelHandler` owns statement attachment/caption validation,
@@ -83,7 +84,11 @@ processed only by the bank-import path and a supported receipt attachment only b
 the receipt path; other non-command text can be processed as a notification.
 `!help` sends all guides that apply to the current channel. `!catch_up` belongs
 to the notification handler and retries messages without the bot's success
-reaction; it never scans historical statement attachments.
+reaction; it never scans historical statement attachments. `!make_schedule`
+also belongs to that handler. It must be sent as a reply in the configured bank
+notification channel and accepts an optional positive `X day(s)`, `X week(s)`,
+`X month(s)`, or `X year(s)` recurrence; no argument means monthly. Invalid
+duration text does not reach the Actual connector.
 
 Unexpected handler exceptions are logged at the bot boundary so one malformed
 message cannot break subsequent routing. Feature handlers translate expected
@@ -94,7 +99,13 @@ errors into their own logs and user-facing feedback.
 `BaseNotification` separates the forwarded-message envelope from bank-specific
 notification wording. `PekaoNotification` supplies patterns for supported Bank
 Pekao deposits, transfers, card payments, and phone top-ups and converts a match
-to `ActualTransactionData`.
+to `ActualTransactionData`. It retains the forwarded Unix timestamp, including
+scientific-notation seconds, rather than discarding it. The transaction date is
+chosen consistently for ordinary imports and schedules in this order: an
+explicit Pekao card-payment date, the forwarded timestamp converted using
+`BANK_NOTIFICATION_TIMEZONE` (default `Europe/Warsaw`), then the Discord
+message creation date in that timezone. A missing or malformed timestamp only
+logs a warning and uses the Discord fallback date.
 
 `NotificationChannelHandler` receives the notification class as a dependency,
 which keeps the Pekao default replaceable in tests or by a future bank selector.
@@ -105,6 +116,31 @@ without echoing the full financial message.
 The catch-up command walks the complete bound-channel history and skips messages
 that already contain the bot's check-mark reaction. The reaction is therefore
 the Discord-side processing marker.
+
+### Recurring schedules
+
+A member may reply `!make_schedule` to a notification only after the bot added
+its own ✅, which proves the notification was imported successfully. The handler
+resolves either Discord's embedded reply message or fetches it from the bound
+channel. Missing/deleted/unavailable references, references from another
+channel, unsupported notification text, missing success reaction, and blank
+payees receive stable Discord errors without details from Discord or Actual.
+
+The handler reuses the exact transaction-data helper used for imports. It creates
+a project-owned schedule request with the source date, account, exact signed
+amount, and trimmed payee as both payee and name. The resulting Actual schedule
+repeats forever at the requested daily/weekly/monthly/yearly interval, does not
+move weekend dates, matches the amount exactly, and never auto-posts a
+transaction—transactions always need manual approval. The source transaction is
+not retroactively attached to the schedule.
+
+`ActualConnector.create_schedule` performs the complete case-insensitive,
+exact-name duplicate check and create operation in one disposable Actual session.
+It explicitly resolves the account and payee before constructing the ActualPy
+schedule, then commits once only when a schedule is created. An existing same
+name returns unchanged even when its schedule details differ. Schedule creation
+uses the shared write lock across the check and create and runs in a worker
+thread, so it cannot race another Actual write or block Discord's event loop.
 
 ## Receipt import
 
@@ -237,7 +273,8 @@ use of the shared Actual manager without blocking unrelated Discord processing.
 actual_discord_bot/
 |-- bot.py                       # lifecycle, commands, composition, routing
 |-- config.py                    # environment-backed configuration
-|-- actual_connector.py          # Actual Budget boundary
+|-- actual_connector.py          # Actual Budget boundary, including schedules
+|-- schedules.py                 # recurrence values and strict duration parser
 |-- bank_notifications/
 |   |-- base_notification.py     # envelope and parser abstraction
 |   `-- pekao_notification.py    # Bank Pekao patterns
