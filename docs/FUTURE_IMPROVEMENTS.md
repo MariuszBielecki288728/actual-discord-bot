@@ -4,6 +4,27 @@ This document is the single home for ideas that are intentionally not yet
 implemented. It describes possible directions, not commitments or current
 behavior. Current behavior is documented in [Architecture](ARCHITECTURE.md).
 
+## Discord readiness monitoring
+
+The current container health check verifies the Actual Budget dependency, not
+the Discord Gateway session or configured-channel binding. Add a bot-owned
+readiness heartbeat so deployment and monitoring can distinguish a running
+process from an operational Discord bot.
+
+After `on_ready` has bound every configured handler, the bot should atomically
+write a small status file in its writable temporary directory and refresh it at
+a fixed interval only while `Client.is_ready()` remains true. The status should
+include the current timestamp, Discord readiness, and handler-binding result.
+It should be removed, or allowed to become stale, on disconnect.
+
+The container health check should require a valid status file that is no older
+than a documented threshold (for example, a 60-second limit with a 15-second
+heartbeat), with a startup grace period for the initial Gateway connection.
+This detects blocked event loops and incomplete startup as well as disconnects.
+Deployment health and a separately defined periodic monitoring policy can then
+use the same signal; Docker health alone must not be assumed to restart an
+unhealthy container.
+
 ## Receipt correction workflow
 
 Receipts whose item sum differs from the declared total by more than PLN 0.02
