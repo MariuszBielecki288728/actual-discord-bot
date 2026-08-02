@@ -1,6 +1,7 @@
 import logging
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import discord
 import pytest
@@ -12,6 +13,7 @@ from actual_discord_bot.bot import (
     CatchUpTimeDeltaError,
     parse_catch_up_after,
 )
+from actual_discord_bot.channel_handlers.bank_imports import BankImportChannelHandler
 from actual_discord_bot.channel_handlers.notifications import (
     NOTIFICATION_HELP_MESSAGE,
     NotificationChannelHandler,
@@ -142,6 +144,34 @@ async def test_on_message_prefers_receipts_in_a_shared_channel():
     ):
         await bot.on_message(message)
     receipt_handle.assert_awaited_once_with(message)
+    notification_handle.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_on_message_prioritizes_bank_csv_imports_in_a_shared_channel():
+    notification_handler = NotificationChannelHandler("shared", MagicMock())
+    bank_handler = BankImportChannelHandler("shared", MagicMock(), ZoneInfo("Europe/Warsaw"))
+    bot = ActualDiscordBot(notification_handler, bank_import_handler=bank_handler)
+    channel = _channel(1, "shared")
+    notification_handler.channel = channel
+    bank_handler.channel = channel
+    message = AsyncMock(spec=discord.Message)
+    message.author = MagicMock()
+    message.channel = channel
+    message.content = ""
+    message.attachments = [MagicMock(spec=discord.Attachment, filename="statement.csv")]
+    with (
+        patch.object(type(bot), "user", new_callable=lambda: property(lambda _: None)),
+        patch.object(
+            bot, "get_context", new=AsyncMock(return_value=MagicMock(valid=False))
+        ),
+        patch.object(bank_handler, "handle", new=AsyncMock()) as bank_handle,
+        patch.object(
+            notification_handler, "handle", new=AsyncMock()
+        ) as notification_handle,
+    ):
+        await bot.on_message(message)
+    bank_handle.assert_awaited_once_with(message)
     notification_handle.assert_not_awaited()
 
 

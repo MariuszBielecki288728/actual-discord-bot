@@ -11,7 +11,7 @@ A Discord bot that automatically creates transactions in [Actual Budget](https:/
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — current component boundaries, message
-  routing, receipt processing, concurrency, and deduplication behavior
+  routing, bank CSV and receipt processing, concurrency, and deduplication behavior
 - [Future improvements](docs/FUTURE_IMPROVEMENTS.md) — ideas that are not yet
   implemented
 
@@ -46,6 +46,23 @@ same-value purchases from different merchants are therefore kept separate. The
 Discord reply explicitly reports whether a transaction was created or skipped as
 an existing receipt.
 
+### Bank CSV Imports
+
+Post exactly one bank-statement CSV in the optional, private bank-import channel.
+Keep the filename supplied by the bank: `bank2ynab` uses it to identify the
+layout. An empty caption imports the current calendar month through today; use a
+caption such as `3 months` to include the current month and the two preceding
+calendar months (maximum 24 months).
+
+The bot converts the supported statement format, filters it to that interval,
+and selects an unambiguous open Actual account. If it cannot safely decide, only
+the uploader can choose an account from a prompt. Existing Actual transactions
+are never modified; a repost is safe and reports aggregate duplicate counts.
+
+The initial supported Pekao layout is the export **without** the optional
+`Kategoria` column. The CSV contains sensitive financial data, so this channel
+must be private.
+
 ## Features
 
 ### Implemented
@@ -53,6 +70,7 @@ an existing receipt.
 - **Pekao bank support** — Parses card payments, incoming transfers, outgoing transfers, and phone top-ups from Bank Pekao S.A. notifications
 - **Receipt photo parsing** — OCR via Tesseract (Polish language) extracts products from receipt photos and creates split transactions
 - **Digital PDF receipt parsing** — Extracts text from digital receipts (Kaufland, Lidl, Żabka apps) without OCR
+- **Bank CSV imports** — Converts supported bank exports with a pinned `bank2ynab` revision, conservatively selects an Actual account, and imports missing rows idempotently
 - **Transaction deduplication** — Prevents duplicate transactions when both a receipt and bank notification arrive for the same purchase
 - **Split transactions** — Each product line item becomes a sub-transaction in Actual Budget
 - **Discount handling** — Recognizes OBNIŻKA/RABAT/UPUST discount lines and includes them as negative sub-transactions
@@ -63,10 +81,10 @@ an existing receipt.
 
 ## Architecture
 
-The bot is a thin Discord router around independently owned notification and
-receipt workflows. The receipt path further separates input processing, text
-parsing, and Actual Budget persistence. Both workflows share one connector and
-serialize writes with one asynchronous lock.
+The bot is a thin Discord router around independently owned notification, bank
+CSV, and receipt workflows. The receipt path further separates input processing,
+text parsing, and Actual Budget persistence. All workflows share one connector
+and serialize writes with one asynchronous lock.
 
 See [Architecture](docs/ARCHITECTURE.md) for the authoritative design and current
 runtime behavior. Unimplemented extensions are tracked separately in
@@ -137,10 +155,11 @@ desired. This address is intentionally available only while connected to the LAN
 4. In the OAuth2 URL Generator, select the `bot` scope and grant **View Channels**,
    **Send Messages**, **Read Message History**, **Add Reactions**, and
    **Attach Files**. Open the generated URL and invite the bot to your server.
-5. Create `bank-notifications` and, optionally, `receipts` text channels. Give the
-   bot the permissions above in both. If different names are used, put the exact
-   names (without `#`) in `DISCORD_BANK_NOTIFICATION_CHANNEL` and
-   `DISCORD_RECEIPT_CHANNEL`.
+5. Create `bank-notifications` and, optionally, `receipts` and `bank-imports`
+   text channels. Make `bank-imports` private: statements are sensitive. Give the
+   bot the permissions above in each enabled channel. If different names are
+   used, put the exact names (without `#`) in `DISCORD_BANK_NOTIFICATION_CHANNEL`,
+   `DISCORD_RECEIPT_CHANNEL`, and `DISCORD_BANK_IMPORT_CHANNEL`.
 
 ### 4. Forward bank notifications
 
@@ -171,8 +190,9 @@ docker compose -f deployment/lan/compose.yml logs -f bot
 
 When connected, the bot posts a friendly, channel-specific guide in every
 configured channel. Send `!help` to retrieve the appropriate guide later. Post a
-receipt in the receipt channel or forward a test bank message, then verify both
-the Discord response and the transaction in Actual.
+receipt in the receipt channel, forward a test bank message, or upload a
+supported bank CSV in the private import channel, then verify the Discord
+response and transaction in Actual.
 
 Useful operating commands:
 
@@ -205,6 +225,12 @@ delete that volume. A backup should be tested before relying on it.
   `http://actual_server:5006`; do not replace it with the host's LAN IP.
 - A bank message has no ✅: its format or wording was not recognized. Inspect the
   logs, then use `!catch_up` after correcting the cause.
+- A bank CSV is rejected: verify there is exactly one `.csv` attachment, its
+  original filename was retained, and the caption is empty or `1` through `24`
+  `months`. Pekao exports must omit the optional `Kategoria` column.
+- A bank CSV asks for an account: the detected bank format did not safely match
+  exactly one open Actual account. Only the uploader may make the selection;
+  retry the upload if the five-minute prompt expires.
 - OCR results are wrong: use a sharp, evenly lit, straight-on photo and verify the
   resulting split transaction manually.
 
@@ -235,8 +261,12 @@ The bot is configured with these environment variables:
 # Discord
 DISCORD_TOKEN=your_discord_bot_token
 DISCORD_BANK_NOTIFICATION_CHANNEL=bank-notifications  # channel name (not ID)
+DISCORD_BANK_IMPORT_CHANNEL=bank-imports  # optional private channel for statement CSVs
 DISCORD_RECEIPT_CHANNEL=receipts                      # optional: channel for receipt photos/PDFs
 DISCORD_HOT_RELOAD=false                              # development-only source watcher
+
+# Bank CSV import (only used when DISCORD_BANK_IMPORT_CHANNEL is set)
+BANK_IMPORT_TIMEZONE=Europe/Warsaw  # calendar-month boundary timezone
 
 # Actual Budget
 ACTUAL_URL=http://actual_server:5006    # Compose service URL used by the bot
@@ -255,8 +285,10 @@ OCR_TESSERACT_PSM=6                     # Tesseract page segmentation mode (defa
 |----------|----------|-------------|
 | `DISCORD_TOKEN` | Yes | Discord bot token |
 | `DISCORD_BANK_NOTIFICATION_CHANNEL` | Yes | Name of the channel to monitor for bank notifications |
+| `DISCORD_BANK_IMPORT_CHANNEL` | No | Private channel for one-file bank CSV imports |
 | `DISCORD_RECEIPT_CHANNEL` | No | Name of the channel for receipt photos/PDFs |
 | `DISCORD_HOT_RELOAD` | No | Enable source watching in a development checkout (default: `false`) |
+| `BANK_IMPORT_TIMEZONE` | No | IANA timezone for bank-import calendar months (default: `Europe/Warsaw`) |
 | `ACTUAL_URL` | Yes | Actual Budget server URL |
 | `ACTUAL_PASSWORD` | Yes | Actual server password |
 | `ACTUAL_FILE` | Yes | Budget file name or sync ID |

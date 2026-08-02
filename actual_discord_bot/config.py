@@ -1,3 +1,5 @@
+from zoneinfo import ZoneInfo
+
 import environ
 
 
@@ -14,5 +16,13 @@ class ActualConfig:
 class DiscordConfig:
     token: str = environ.var()
     bank_notification_channel: str = environ.var()
+    bank_import_channel: str = environ.var(default="")
     receipt_channel: str = environ.var(default="")
     hot_reload: bool = environ.bool_var(default=False)
+
+
+@environ.config(prefix="BANK_IMPORT")
+class BankImportConfig:
+    """Configuration specific to the optional bank CSV workflow."""
+
+    timezone: ZoneInfo = environ.var(default="Europe/Warsaw", converter=ZoneInfo)

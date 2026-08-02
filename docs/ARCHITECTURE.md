@@ -6,7 +6,7 @@ not in this document.
 
 ## System context
 
-The bot imports financial activity from two Discord workflows into one Actual
+The bot imports financial activity from three Discord workflows into an Actual
 Budget account:
 
 ```text
@@ -15,6 +15,7 @@ Android bank notification -> Discord message -----> notification handler --+
 Receipt image -> Discord attachment -> image preprocessing -> Tesseract --+--> Actual Budget
 Receipt PDF ---> Discord attachment -> PDF text extraction --------------+        |
                                       -> receipt parser -> split transaction -----+
+Bank CSV ------> Discord attachment -> bank2ynab worker -> date filter -----------+
 ```
 
 Bank notifications are forwarded to Discord by an external Android Automate
@@ -32,6 +33,7 @@ main()
   |-- ActualConnector -------------------+--------------------------+
   |-- shared asyncio write lock ---------+--------------------------+
   |-- NotificationChannelHandler <-------+                          |
+  |-- optional BankImportChannelHandler <-+                          |
   |-- ReceiptProcessor                                              |
   |-- ReceiptChannelHandler <-------------- ReceiptProcessor -------+
   `-- ActualDiscordBot
@@ -48,6 +50,9 @@ The main components have deliberately narrow responsibilities:
   success reactions, and catch-up processing.
 - `ReceiptChannelHandler` owns attachment selection and limits, Discord
   reactions/replies, receipt-processing concurrency, and receipt persistence.
+- `BankImportChannelHandler` owns statement attachment/caption validation,
+  account-selection prompts, reactions/replies, conversion concurrency, and
+  calls to the Actual import boundary. It does not parse bank-specific columns.
 - `ReceiptProcessor` is independent of Discord. It selects OCR or PDF text
   extraction, invokes the parser, supplies a fallback date, and validates item
   totals.
@@ -72,11 +77,13 @@ For each message, the bot:
 3. considers handlers whose bound channel matches the message channel;
 4. dispatches to the first handler that accepts the message.
 
-Receipt handling is ordered before notification handling. If both workflows are
-configured for one channel, a supported receipt attachment is processed only as
-a receipt; other non-command text can be processed as a notification. `!help`
-sends all guides that apply to the current channel. `!catch_up` belongs to the
-notification handler and retries messages without the bot's success reaction.
+Bank CSV handling is ordered before receipt and notification handling. Receipt
+handling is ordered before notifications. If workflows share a channel, a CSV is
+processed only by the bank-import path and a supported receipt attachment only by
+the receipt path; other non-command text can be processed as a notification.
+`!help` sends all guides that apply to the current channel. `!catch_up` belongs
+to the notification handler and retries messages without the bot's success
+reaction; it never scans historical statement attachments.
 
 Unexpected handler exceptions are logged at the bot boundary so one malformed
 message cannot break subsequent routing. Feature handlers translate expected
@@ -161,10 +168,66 @@ notifications specifically look for earlier receipt imports. Deposits are not
 deduplicated against receipts. Merchant matching prevents unrelated same-value
 purchases from being discarded.
 
+## Bank CSV import
+
+The optional `DISCORD_BANK_IMPORT_CHANNEL` is intended to be private. The
+handler accepts exactly one `.csv` attachment and an empty caption or an exact
+`1 months` through `24 months` caption. It checks the 10 MiB limit both before
+and after download, retains the safe original basename, and runs one conversion
+at a time by default. No payees, amounts, raw CSV text, attachment URLs, or
+upstream diagnostics are included in Discord replies or logs.
+
+`BankStatementConverter` creates a unique temporary input/config directory,
+then starts `bank2ynab_worker` without a shell and with a 30-second timeout. The
+worker is the only application module that imports `bank2ynab`; it emits a
+versioned JSON result and never configures its YNAB API. The parent validates
+that exactly one file and no more than 50,000 rows were converted, translates
+YNAB milliunits through `Decimal`, and removes the temporary directory in all
+outcomes.
+
+The project pins `bank2ynab` to commit
+`3e2bf71d27031f06172e7ea8ad583f5a7ac3bf78` in both `pyproject.toml` and the
+lock file. Upgrades are deliberate dependency changes: review a new immutable
+commit, update and lock it, run synthetic conversion contract tests, manually
+smoke-test a private current export, and confirm the container build before
+merging. Git is present only in the Docker builder stage to resolve this VCS
+dependency; the production stage does not clone upstream at runtime.
+
+The current supported Pekao export is the 11-column layout without the optional
+`Kategoria` column. Its `Lista_operacji_YYYYMMDD_HHMMSS.csv` filename must not
+be changed. A recognized 12-column export is rejected rather than locally
+reparsed.
+
+Date filtering happens after conversion. The configured
+`BANK_IMPORT_TIMEZONE` (default `Europe/Warsaw`) determines today; the inclusive
+window begins on the first day of the current month minus `X - 1` calendar
+months and ends today. Future-dated and older rows are counted as outside the
+window.
+
+Before writing, the handler lists open, non-tombstoned Actual accounts. It
+reuses a process-memory uploader-approved mapping only while that account is
+still open, accepts a sole account, or accepts a unique exact normalized match.
+Normalization is Unicode case-folding, accent/punctuation removal, and
+whitespace collapse; a core-token comparison removes only generic words such as
+country codes, `bank`, `checking`, `savings`, `credit`, and `account`. It never
+uses fuzzy or substring matching. Ambiguous cases present a paginated (25 per
+page), uploader-only select view that expires after five minutes. No Actual
+write lock is held during conversion or that interaction.
+
+`ActualConnector.import_bank_transactions` revalidates the chosen account while
+holding the shared write lock. It assigns deterministic IDs of the form
+`bank2ynab:<sha256(format + NUL + upstream ID)[:32]>`, then first matches those
+IDs in the selected account. If no ID exists, it conservatively compares parent
+transactions with exact amount, a one-day date window, and merchant containment
+across imported description, Actual payee, and notes. Rows without a payee need
+an exact date. A fallback candidate can suppress only one source row, so a
+legitimate repeated payment is retained. Existing rows are never modified;
+missing rows are created as cleared transactions and committed once.
+
 ## Actual Budget write serialization
 
-`main()` injects the same `asyncio.Lock` into both handlers. The lock serializes
-all notification and receipt writes through the shared `ActualConnector`, while
+`main()` injects the same `asyncio.Lock` into all handlers. The lock serializes
+notification, receipt, and bank-CSV writes through the shared `ActualConnector`, while
 each blocking connector call runs in a worker thread. This avoids overlapping
 use of the shared Actual manager without blocking unrelated Discord processing.
 
@@ -178,9 +241,16 @@ actual_discord_bot/
 |-- bank_notifications/
 |   |-- base_notification.py     # envelope and parser abstraction
 |   `-- pekao_notification.py    # Bank Pekao patterns
+|-- bank_imports/
+|   |-- models.py                # immutable converted/import values
+|   |-- caption.py               # strict captions and calendar windows
+|   |-- account_matcher.py       # conservative pure account resolution
+|   |-- converter.py             # bounded parent-side worker adapter
+|   `-- bank2ynab_worker.py      # isolated pinned upstream adapter
 |-- channel_handlers/
 |   |-- base.py                  # shared channel lifecycle
 |   |-- notifications.py         # notification Discord workflow
+|   |-- bank_imports.py          # CSV Discord workflow and account selector
 |   `-- receipts.py              # receipt Discord workflow
 `-- receipts/
     |-- models.py                # parsed receipt data

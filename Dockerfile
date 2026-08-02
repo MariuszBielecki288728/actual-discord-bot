@@ -19,6 +19,7 @@ FROM python-base AS builder-base
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
     curl \
+    git \
     build-essential \
     tesseract-ocr \
     tesseract-ocr-pol \
@@ -67,7 +68,9 @@ FROM python-base AS production
 
 COPY --from=builder-base $VENV_PATH $VENV_PATH
 COPY --from=builder-base $PYSETUP_PATH/dist .
-RUN pip install *.whl
+# The builder virtualenv already contains the lockfile-resolved VCS dependency.
+# Avoid asking pip in the Git-free production image to clone it again.
+RUN pip install --no-deps *.whl
 
 WORKDIR /app
 
