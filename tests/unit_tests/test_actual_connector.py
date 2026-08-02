@@ -21,17 +21,48 @@ def mock_actual_manager():
 
 
 @pytest.fixture
-def connector(mock_actual_manager):
+def mock_actual_factory(mock_actual_manager):
     with patch(
         "actual_discord_bot.actual_connector.Actual", return_value=mock_actual_manager
-    ):
-        return ActualConnector(
-            ActualConfig(url="http://test:5006", password="test", file="TestBudget")
-        )
+    ) as factory:
+        yield factory
+
+
+@pytest.fixture
+def connector(mock_actual_factory):
+    return ActualConnector(
+        ActualConfig(url="http://test:5006", password="test", file="TestBudget")
+    )
 
 
 class TestBankNotificationDeduplication:
     """Test that bank notifications don't create duplicates when receipts exist."""
+
+    def test_creates_a_fresh_client_for_each_transaction_save(
+        self, connector, mock_actual_factory
+    ):
+        """A closed Actual context manager must never be reused by a later import."""
+        transaction_data = ActualTransactionData(
+            date=date(2026, 5, 1),
+            account="Pekao",
+            amount=Decimal("-10.00"),
+            imported_payee="TestStore",
+        )
+
+        with (
+            patch(
+                "actual_discord_bot.actual_connector.find_matching_transaction",
+                return_value=None,
+            ),
+            patch(
+                "actual_discord_bot.actual_connector.create_transaction",
+                return_value=MagicMock(),
+            ),
+        ):
+            connector.save_transaction(transaction_data)
+            connector.save_transaction(transaction_data)
+
+        assert mock_actual_factory.call_count == 2
 
     def test_skips_creation_when_receipt_transaction_exists(
         self, connector, mock_actual_manager
