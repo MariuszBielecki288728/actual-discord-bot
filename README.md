@@ -58,7 +58,7 @@ an existing receipt.
 - **Discount handling** — Recognizes OBNIŻKA/RABAT/UPUST discount lines and includes them as negative sub-transactions
 - **Idempotent catch-up** — `!catch_up` command processes all unprocessed messages in the channel (skips already-reacted ones)
 - **In-channel guidance** — Posts a complete usage guide on startup and provides it on demand with `!help`
-- **Hot-reload** — Uses [cogwatch](https://github.com/robertwayne/cogwatch) for live code reloading during development
+- **Hot-reload** — Uses [cogwatch](https://github.com/robertwayne/cogwatch) only in the development Compose stack
 - **Dockerized deployment** — Full Docker Compose setup with bot, Actual server, and integration test services
 
 ## Architecture
@@ -236,6 +236,7 @@ The bot is configured with these environment variables:
 DISCORD_TOKEN=your_discord_bot_token
 DISCORD_BANK_NOTIFICATION_CHANNEL=bank-notifications  # channel name (not ID)
 DISCORD_RECEIPT_CHANNEL=receipts                      # optional: channel for receipt photos/PDFs
+DISCORD_HOT_RELOAD=false                              # development-only source watcher
 
 # Actual Budget
 ACTUAL_URL=http://actual_server:5006    # Compose service URL used by the bot
@@ -255,6 +256,7 @@ OCR_TESSERACT_PSM=6                     # Tesseract page segmentation mode (defa
 | `DISCORD_TOKEN` | Yes | Discord bot token |
 | `DISCORD_BANK_NOTIFICATION_CHANNEL` | Yes | Name of the channel to monitor for bank notifications |
 | `DISCORD_RECEIPT_CHANNEL` | No | Name of the channel for receipt photos/PDFs |
+| `DISCORD_HOT_RELOAD` | No | Enable source watching in a development checkout (default: `false`) |
 | `ACTUAL_URL` | Yes | Actual Budget server URL |
 | `ACTUAL_PASSWORD` | Yes | Actual server password |
 | `ACTUAL_FILE` | Yes | Budget file name or sync ID |
@@ -273,8 +275,13 @@ OCR_TESSERACT_PSM=6                     # Tesseract page segmentation mode (defa
 docker compose up bot
 
 # Or directly
-python -m actual_discord_bot.bot
+DISCORD_HOT_RELOAD=true python -m actual_discord_bot.bot
 ```
+
+The development Compose stack enables `DISCORD_HOT_RELOAD=true` and watches the
+mounted `actual_discord_bot/` source tree. Production leaves it disabled by default.
+If the development source tree is unavailable, the bot logs a warning and continues
+without hot reload rather than blocking Discord startup.
 
 ### Bot Commands
 
@@ -333,7 +340,7 @@ ruff format .
 
 - **[discord.py](https://discordpy.readthedocs.io/)** — Discord API wrapper
 - **[actualpy](https://actualpy.readthedocs.io/)** — Python client for Actual Budget API
-- **[cogwatch](https://github.com/robertwayne/cogwatch)** — Hot-reload for discord.py cogs
+- **[cogwatch](https://github.com/robertwayne/cogwatch)** — Development-only source watcher
 - **[environ-config](https://environ-config.readthedocs.io/)** — Typed environment configuration
 - **[Babel](https://babel.pocoo.org/)** — Number/locale parsing (Polish decimal format)
 - **[Pillow](https://pillow.readthedocs.io/)** — Image preprocessing for OCR

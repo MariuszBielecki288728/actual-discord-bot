@@ -15,3 +15,4 @@ class DiscordConfig:
     token: str = environ.var()
     bank_notification_channel: str = environ.var()
     receipt_channel: str = environ.var(default="")
+    hot_reload: bool = environ.bool_var(default=False)

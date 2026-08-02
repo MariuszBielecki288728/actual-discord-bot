@@ -9,6 +9,7 @@ services:
       - .:/app
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - DISCORD_HOT_RELOAD=true
       - ACTUAL_URL=http://actual_server:5006
       - ACTUAL_PASSWORD=${ACTUAL_PASSWORD}
       - ACTUAL_FILE=${ACTUAL_FILE}
