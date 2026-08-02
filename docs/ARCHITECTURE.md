@@ -82,13 +82,17 @@ Bank CSV handling is ordered before receipt and notification handling. Receipt
 handling is ordered before notifications. If workflows share a channel, a CSV is
 processed only by the bank-import path and a supported receipt attachment only by
 the receipt path; other non-command text can be processed as a notification.
-`!help` sends all guides that apply to the current channel. `!catch_up` belongs
-to the notification handler and retries messages without the bot's success
-reaction; it never scans historical statement attachments. `!make_schedule`
-also belongs to that handler. It must be sent as a reply in the configured bank
-notification channel and accepts an optional positive `X day(s)`, `X week(s)`,
-`X month(s)`, or `X year(s)` recurrence; no argument means monthly. Invalid
-duration text does not reach the Actual connector.
+`!help` sends all guides that apply to the current channel. `!clear_channel` is
+a common moderator command available only in bound watched text channels; it
+deletes the command and all other deletable messages before reporting the count.
+It batches recent messages and deletes older history individually because Discord
+does not support bulk deletion beyond two weeks. `!catch_up` belongs to the
+notification handler and retries messages without the bot's success reaction; it
+never scans historical statement attachments. `!make_schedule` also belongs to
+that handler. It must be sent as a reply in the configured bank notification
+channel and accepts an optional positive `X day(s)`, `X week(s)`, `X month(s)`,
+or `X year(s)` recurrence; no argument means monthly. Invalid duration text does
+not reach the Actual connector.
 
 Unexpected handler exceptions are logged at the bot boundary so one malformed
 message cannot break subsequent routing. Feature handlers translate expected
