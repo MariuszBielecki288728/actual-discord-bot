@@ -113,10 +113,12 @@ class NotificationChannelHandler(BaseChannelHandler):
 
         processed_count = 0
         async with ctx.typing():
-            history_arguments: dict[str, datetime | None] = {"limit": None}
-            if after is not None:
-                history_arguments["after"] = after
-            async for message in self.channel.history(**history_arguments):
+            history = (
+                self.channel.history(limit=None, after=after)
+                if after is not None
+                else self.channel.history(limit=None)
+            )
+            async for message in history:
                 if not self._should_retry(message):
                     continue
                 try:

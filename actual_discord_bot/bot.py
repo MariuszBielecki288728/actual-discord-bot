@@ -13,9 +13,10 @@ from cogwatch import Watcher  # type: ignore[import-untyped]
 from discord.ext import commands
 
 from actual_discord_bot.actual_connector import ActualConnector
+from actual_discord_bot.channel_handlers.bank_imports import BankImportChannelHandler
 from actual_discord_bot.channel_handlers.notifications import NotificationChannelHandler
 from actual_discord_bot.channel_handlers.receipts import ReceiptChannelHandler
-from actual_discord_bot.config import ActualConfig, DiscordConfig
+from actual_discord_bot.config import ActualConfig, BankImportConfig, DiscordConfig
 from actual_discord_bot.receipts.ocr_provider import OCRConfig, create_ocr_provider
 from actual_discord_bot.receipts.processor import ReceiptProcessor
 
@@ -44,6 +45,7 @@ class ActualDiscordBot(commands.Bot):
         self,
         notification_handler: NotificationChannelHandler,
         receipt_handler: ReceiptChannelHandler | None = None,
+        bank_import_handler: BankImportChannelHandler | None = None,
         *,
         hot_reload: bool = False,
     ) -> None:
@@ -53,6 +55,7 @@ class ActualDiscordBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents, help_command=None)
         self.notification_handler = notification_handler
         self.receipt_handler = receipt_handler
+        self.bank_import_handler = bank_import_handler
         self.hot_reload = hot_reload
 
         async def catch_up_command(
@@ -67,7 +70,7 @@ class ActualDiscordBot(commands.Bot):
         self.add_command(commands.Command(help_command, name="help"))
         self.handlers: tuple[BaseChannelHandler, ...] = tuple(
             handler
-            for handler in (receipt_handler, notification_handler)
+            for handler in (bank_import_handler, receipt_handler, notification_handler)
             if handler is not None
         )
 
@@ -163,6 +166,7 @@ def parse_catch_up_after(time_delta: str, now: datetime) -> datetime | None:
 
 async def main() -> None:
     discord_config = DiscordConfig.from_environ()  # type: ignore[attr-defined]
+    bank_import_config = BankImportConfig.from_environ()  # type: ignore[attr-defined]
     actual_config = ActualConfig.from_environ()  # type: ignore[attr-defined]
     actual_connector = ActualConnector(actual_config)
     actual_write_lock = asyncio.Lock()
@@ -183,9 +187,19 @@ async def main() -> None:
             receipt_processor,
             actual_write_lock=actual_write_lock,
         )
+    bank_import_handler = None
+    bank_import_channel = getattr(discord_config, "bank_import_channel", "")
+    if isinstance(bank_import_channel, str) and bank_import_channel:
+        bank_import_handler = BankImportChannelHandler(
+            bank_import_channel,
+            actual_connector,
+            bank_import_config.timezone,
+            actual_write_lock=actual_write_lock,
+        )
     client = ActualDiscordBot(
         notification_handler,
         receipt_handler,
+        bank_import_handler,
         hot_reload=discord_config.hot_reload,
     )
     await client.start(discord_config.token)

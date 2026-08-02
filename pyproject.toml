@@ -59,6 +59,7 @@ babel = "^2.18.0"
 pillow = "^12.3.0"
 pytesseract = "^0.3.13"
 pdfplumber = "^0.11.10"
+bank2ynab = { git = "https://github.com/bank2ynab/bank2ynab.git", rev = "3e2bf71d27031f06172e7ea8ad583f5a7ac3bf78" }
 
 
 [tool.poetry.group.dev.dependencies]

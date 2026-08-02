@@ -1,10 +1,18 @@
+import hashlib
+from collections.abc import Iterable
 from datetime import date
 from decimal import Decimal
 
 from actual import Actual
-from actual.database import Transactions
-from actual.queries import create_transaction
+from actual.database import Accounts, Transactions
+from actual.queries import create_transaction, get_transactions
+from sqlmodel import select
 
+from actual_discord_bot.bank_imports.models import (
+    BankImportResult,
+    BankImportTransaction,
+    ImportableActualAccount,
+)
 from actual_discord_bot.config import ActualConfig
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
 from actual_discord_bot.receipts.models import ParsedReceipt
@@ -12,6 +20,7 @@ from actual_discord_bot.receipts.transaction import (
     create_receipt_split_transaction,
     find_matching_transaction,
 )
+from actual_discord_bot.transaction_matching import merchant_names_match
 
 
 class ActualConnector:
@@ -71,3 +80,141 @@ class ActualConnector:
                 account_name=self.config.account,
                 transaction_date=fallback_date,
             )
+
+    def list_import_accounts(self) -> tuple[ImportableActualAccount, ...]:
+        """Return all currently open accounts available to bank statement imports."""
+        with self._create_actual_manager() as actual:
+            accounts = actual.session.exec(select(Accounts)).all()
+            return tuple(
+                ImportableActualAccount(
+                    name=account.name,
+                    off_budget=bool(account.offbudget),
+                )
+                for account in accounts
+                if isinstance(account.name, str)
+                and not bool(account.closed)
+                and not bool(account.tombstone)
+            )
+
+    def import_bank_transactions(
+        self,
+        account_name: str,
+        bank_format: str,
+        transactions: Iterable[BankImportTransaction],
+    ) -> BankImportResult:
+        """Idempotently create missing bank rows in one Actual commit."""
+        rows = tuple(transactions)
+        _validate_bank_transactions(rows)
+        with self._create_actual_manager() as actual:
+            account = _find_open_account(actual, account_name)
+            if account is None:
+                msg = "Selected Actual account is no longer open"
+                raise ValueError(msg)
+            existing = _get_import_transactions(actual, account)
+            created_count = 0
+            duplicate_count = 0
+            consumed_candidates: set[int] = set()
+            existing_ids = {
+                transaction.financial_id
+                for transaction in existing
+                if isinstance(transaction.financial_id, str)
+            }
+            for row in rows:
+                financial_id = generate_bank_imported_id(
+                    bank_format, row.upstream_import_id
+                )
+                if financial_id in existing_ids or _fallback_duplicate(
+                    row, existing, consumed_candidates
+                ):
+                    duplicate_count += 1
+                    continue
+                create_transaction(
+                    actual.session,
+                    date=row.date,
+                    account=account,
+                    amount=row.amount,
+                    imported_id=financial_id,
+                    imported_payee=row.payee,
+                    notes=row.memo or "",
+                    cleared=True,
+                )
+                existing_ids.add(financial_id)
+                created_count += 1
+            if created_count:
+                actual.commit()
+            return BankImportResult(created_count, duplicate_count)
+
+
+def generate_bank_imported_id(bank_format: str, upstream_import_id: str) -> str:
+    """Namespace an upstream YNAB import ID for Actual's financial ID field."""
+    content = f"{bank_format}\0{upstream_import_id}".encode()
+    return f"bank2ynab:{hashlib.sha256(content).hexdigest()[:32]}"
+
+
+def _validate_bank_transactions(rows: tuple[BankImportTransaction, ...]) -> None:
+    for row in rows:
+        if row.amount != row.amount.quantize(Decimal("0.01")):
+            msg = "Bank transaction amount must use cent precision"
+            raise ValueError(msg)
+        if not row.upstream_import_id.strip():
+            msg = "Bank transaction requires an upstream import ID"
+            raise ValueError(msg)
+
+
+def _find_open_account(actual: Actual, account_name: str) -> Accounts | None:
+    for account in actual.session.exec(select(Accounts)).all():
+        if (
+            isinstance(account.name, str)
+            and account.name == account_name
+            and not bool(account.closed)
+            and not bool(account.tombstone)
+        ):
+            return account
+    return None
+
+
+def _get_import_transactions(
+    actual: Actual, account: Accounts
+) -> tuple[Transactions, ...]:
+    """Return ordinary transactions and split parents, excluding split children later."""
+    return tuple(get_transactions(actual.session, account=account)) + tuple(
+        get_transactions(actual.session, account=account, is_parent=True)
+    )
+
+
+def _fallback_duplicate(
+    source: BankImportTransaction,
+    existing: tuple[Transactions, ...],
+    consumed_candidates: set[int],
+) -> bool:
+    for candidate in existing:
+        if id(candidate) in consumed_candidates or bool(candidate.is_child):
+            continue
+        if Decimal(str(candidate.amount)) != source.amount:
+            continue
+        candidate_date = candidate.date
+        if not isinstance(candidate_date, date):
+            continue
+        date_difference = abs((candidate_date - source.date).days)
+        if date_difference > 1:
+            continue
+        if source.payee is None and candidate_date != source.date:
+            continue
+        if source.payee is not None and not any(
+            merchant_names_match(source.payee, value)
+            for value in _transaction_merchant_names(candidate)
+        ):
+            continue
+        consumed_candidates.add(id(candidate))
+        return True
+    return False
+
+
+def _transaction_merchant_names(transaction: Transactions) -> tuple[str, ...]:
+    payee = getattr(transaction, "payee", None)
+    values = (
+        transaction.imported_description,
+        transaction.notes,
+        getattr(payee, "name", None),
+    )
+    return tuple(value for value in values if isinstance(value, str) and value.strip())
