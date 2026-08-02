@@ -45,6 +45,11 @@ async def test_on_ready_binds_all_handlers_across_guilds_and_announces(bot):
     assert receipt_handler.channel is receipt_channel
 
 
+def test_registers_commands(bot):
+    assert bot.get_command("catch_up") is bot.catch_up
+    assert bot.get_command("help") is bot.help
+
+
 @pytest.mark.asyncio
 async def test_on_message_invokes_valid_command_before_handlers(bot):
     message = AsyncMock(spec=discord.Message)
