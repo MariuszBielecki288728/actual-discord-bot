@@ -26,3 +26,10 @@ class BankImportConfig:
     """Configuration specific to the optional bank CSV workflow."""
 
     timezone: ZoneInfo = environ.var(default="Europe/Warsaw", converter=ZoneInfo)
+
+
+@environ.config(prefix="BANK_NOTIFICATION")
+class BankNotificationConfig:
+    """Configuration specific to forwarded bank notifications."""
+
+    timezone: ZoneInfo = environ.var(default="Europe/Warsaw", converter=ZoneInfo)

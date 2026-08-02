@@ -92,7 +92,7 @@ async def test_setup_hook_starts_hot_reload_when_source_tree_exists(
 
 
 def test_registers_commands_without_self_parameter(bot):
-    for name in ("catch_up", "help"):
+    for name in ("catch_up", "help", "make_schedule"):
         command = bot.get_command(name)
         assert command is not None
         assert "self" not in command.params
@@ -100,6 +100,9 @@ def test_registers_commands_without_self_parameter(bot):
     catch_up = bot.get_command("catch_up")
     assert catch_up is not None
     assert "time_delta" in catch_up.params
+    make_schedule = bot.get_command("make_schedule")
+    assert make_schedule is not None
+    assert "time_delta" in make_schedule.params
 
 
 @pytest.mark.asyncio
@@ -150,7 +153,9 @@ async def test_on_message_prefers_receipts_in_a_shared_channel():
 @pytest.mark.asyncio
 async def test_on_message_prioritizes_bank_csv_imports_in_a_shared_channel():
     notification_handler = NotificationChannelHandler("shared", MagicMock())
-    bank_handler = BankImportChannelHandler("shared", MagicMock(), ZoneInfo("Europe/Warsaw"))
+    bank_handler = BankImportChannelHandler(
+        "shared", MagicMock(), ZoneInfo("Europe/Warsaw")
+    )
     bot = ActualDiscordBot(notification_handler, bank_import_handler=bank_handler)
     channel = _channel(1, "shared")
     notification_handler.channel = channel
@@ -261,6 +266,39 @@ async def test_catch_up_rejects_invalid_lookback_without_processing(bot):
 
     ctx.send.assert_awaited_once_with(CATCH_UP_TIME_DELTA_ERROR)
     catch_up.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_make_schedule_delegates_a_valid_recurrence(bot):
+    ctx = AsyncMock()
+    with patch.object(
+        bot.notification_handler, "make_schedule", new=AsyncMock()
+    ) as make_schedule:
+        command = bot.get_command("make_schedule")
+        assert command is not None
+        await command.callback(ctx, time_delta="2 weeks")
+
+    make_schedule.assert_awaited_once()
+    assert make_schedule.await_args.args[0] is ctx
+    recurrence = make_schedule.await_args.args[1]
+    assert recurrence.interval == 2
+    assert recurrence.frequency.value == "weekly"
+
+
+@pytest.mark.asyncio
+async def test_make_schedule_rejects_invalid_recurrence_without_delegating(bot):
+    ctx = AsyncMock()
+    with patch.object(
+        bot.notification_handler, "make_schedule", new=AsyncMock()
+    ) as make_schedule:
+        command = bot.get_command("make_schedule")
+        assert command is not None
+        await command.callback(ctx, time_delta="1 hour")
+
+    ctx.reply.assert_awaited_once_with(
+        "Error: Invalid recurrence. Use X day(s), X week(s), X month(s), or X year(s)."
+    )
+    make_schedule.assert_not_awaited()
 
 
 @pytest.mark.parametrize(

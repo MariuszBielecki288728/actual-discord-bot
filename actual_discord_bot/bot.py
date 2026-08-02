@@ -3,7 +3,6 @@
 import asyncio
 import calendar
 import logging
-import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -16,9 +15,19 @@ from actual_discord_bot.actual_connector import ActualConnector
 from actual_discord_bot.channel_handlers.bank_imports import BankImportChannelHandler
 from actual_discord_bot.channel_handlers.notifications import NotificationChannelHandler
 from actual_discord_bot.channel_handlers.receipts import ReceiptChannelHandler
-from actual_discord_bot.config import ActualConfig, BankImportConfig, DiscordConfig
+from actual_discord_bot.config import (
+    ActualConfig,
+    BankImportConfig,
+    BankNotificationConfig,
+    DiscordConfig,
+)
 from actual_discord_bot.receipts.ocr_provider import OCRConfig, create_ocr_provider
 from actual_discord_bot.receipts.processor import ReceiptProcessor
+from actual_discord_bot.schedules import (
+    TimeDeltaError,
+    parse_schedule_recurrence,
+    parse_time_delta,
+)
 
 if TYPE_CHECKING:
     from actual_discord_bot.channel_handlers.base import BaseChannelHandler
@@ -28,13 +37,9 @@ LOGGER = logging.getLogger(__name__)
 CATCH_UP_TIME_DELTA_ERROR = (
     "Error: Invalid time delta. Use X hour(s), X day(s), or X month(s)."
 )
-_CATCH_UP_TIME_DELTA_PATTERN = re.compile(
-    r"(?P<count>[1-9]\d*)\s+(?P<unit>hours?|days?|months?)",
-    re.IGNORECASE,
-)
 
 
-class CatchUpTimeDeltaError(ValueError):
+class CatchUpTimeDeltaError(TimeDeltaError):
     """Raised when a catch-up time delta does not use a supported format."""
 
 
@@ -66,8 +71,14 @@ class ActualDiscordBot(commands.Bot):
         async def help_command(ctx: commands.Context) -> None:
             await self._help(ctx)
 
+        async def make_schedule_command(
+            ctx: commands.Context, *, time_delta: str = ""
+        ) -> None:
+            await self._make_schedule(ctx, time_delta)
+
         self.add_command(commands.Command(catch_up_command, name="catch_up"))
         self.add_command(commands.Command(help_command, name="help"))
+        self.add_command(commands.Command(make_schedule_command, name="make_schedule"))
         self.handlers: tuple[BaseChannelHandler, ...] = tuple(
             handler
             for handler in (bank_import_handler, receipt_handler, notification_handler)
@@ -135,6 +146,17 @@ class ActualDiscordBot(commands.Bot):
         for handler in matching_handlers:
             await ctx.send(handler.help_message)
 
+    async def _make_schedule(self, ctx: commands.Context, time_delta: str = "") -> None:
+        """Create a recurring schedule from a successfully imported reply target."""
+        try:
+            recurrence = parse_schedule_recurrence(time_delta)
+        except TimeDeltaError:
+            await ctx.reply(
+                "Error: Invalid recurrence. Use X day(s), X week(s), X month(s), or X year(s)."
+            )
+            return
+        await self.notification_handler.make_schedule(ctx, recurrence)
+
 
 def parse_catch_up_after(time_delta: str, now: datetime) -> datetime | None:
     """
@@ -146,12 +168,13 @@ def parse_catch_up_after(time_delta: str, now: datetime) -> datetime | None:
     if not time_delta.strip():
         return None
 
-    match = _CATCH_UP_TIME_DELTA_PATTERN.fullmatch(time_delta.strip())
-    if match is None:
-        raise CatchUpTimeDeltaError
-
-    count = int(match["count"])
-    unit = match["unit"].lower()
+    try:
+        count, unit = parse_time_delta(
+            time_delta,
+            allowed_units={"hour", "day", "month"},
+        )
+    except TimeDeltaError as error:
+        raise CatchUpTimeDeltaError from error
     if unit.startswith("hour"):
         return now - timedelta(hours=count)
     if unit.startswith("day"):
@@ -167,12 +190,14 @@ def parse_catch_up_after(time_delta: str, now: datetime) -> datetime | None:
 async def main() -> None:
     discord_config = DiscordConfig.from_environ()  # type: ignore[attr-defined]
     bank_import_config = BankImportConfig.from_environ()  # type: ignore[attr-defined]
+    bank_notification_config = BankNotificationConfig.from_environ()  # type: ignore[attr-defined]
     actual_config = ActualConfig.from_environ()  # type: ignore[attr-defined]
     actual_connector = ActualConnector(actual_config)
     actual_write_lock = asyncio.Lock()
     notification_handler = NotificationChannelHandler(
         discord_config.bank_notification_channel,
         actual_connector,
+        timezone=bank_notification_config.timezone,
         actual_write_lock=actual_write_lock,
     )
     receipt_handler = None

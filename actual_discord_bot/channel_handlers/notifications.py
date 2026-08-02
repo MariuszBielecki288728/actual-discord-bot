@@ -2,13 +2,19 @@
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
+from decimal import Decimal
 from enum import StrEnum
+from zoneinfo import ZoneInfo
 
 import discord
 from discord.ext import commands
 
-from actual_discord_bot.actual_connector import ActualConnector
+from actual_discord_bot.actual_connector import (
+    ActualConnector,
+    ActualScheduleData,
+    ScheduleCreationStatus,
+)
 from actual_discord_bot.bank_notifications import PekaoNotification
 from actual_discord_bot.bank_notifications.base_notification import BaseNotification
 from actual_discord_bot.channel_handlers.base import (
@@ -16,10 +22,12 @@ from actual_discord_bot.channel_handlers.base import (
     BaseChannelHandler,
 )
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
-from actual_discord_bot.errors import ParseNotificationError
+from actual_discord_bot.errors import ParseNotificationError, ScheduleSourceNotFound
+from actual_discord_bot.schedules import ScheduleRecurrence
 
 LOGGER = logging.getLogger(__name__)
 ERROR_REACTION = "❌"
+DEFAULT_NOTIFICATION_TIMEZONE = ZoneInfo("Europe/Warsaw")
 
 NOTIFICATION_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget notification assistant.**
 
@@ -38,7 +46,8 @@ An administrator can create a Discord webhook for this channel in **Edit Channel
 
 **Commands**
 `!help` — show this notification guide
-`!catch_up [X hour(s)|X day(s)|X month(s)]` — retry messages in this channel that do not already have my ✅"""
+`!catch_up [X hour(s)|X day(s)|X month(s)]` — retry messages in this channel that do not already have my ✅
+`!make_schedule [X day(s)|X week(s)|X month(s)|X year(s)]` — reply to a notification I marked ✅ to create a manual-approval recurring schedule. It defaults to monthly."""
 
 
 class MessageHandlingResult(StrEnum):
@@ -56,10 +65,12 @@ class NotificationChannelHandler(BaseChannelHandler):
         channel_name: str,
         actual_connector: ActualConnector,
         notification_type: type[BaseNotification] = PekaoNotification,
+        timezone: ZoneInfo = DEFAULT_NOTIFICATION_TIMEZONE,
         actual_write_lock: asyncio.Lock | None = None,
     ) -> None:
         super().__init__(channel_name, NOTIFICATION_HELP_MESSAGE)
         self.actual_connector = actual_connector
+        self.timezone = timezone
         self.notification_type = notification_type
         self.actual_write_lock = actual_write_lock
 
@@ -68,8 +79,7 @@ class NotificationChannelHandler(BaseChannelHandler):
 
     async def handle(self, message: discord.Message) -> MessageHandlingResult:
         try:
-            notification = self.notification_type.from_message(message.content)
-            transaction_data = notification.to_transaction()
+            transaction_data = self._transaction_data_from_message(message)
             await self._save_transaction(transaction_data)
         except ParseNotificationError:
             LOGGER.info("Could not parse bank notification message %s", message.id)
@@ -89,7 +99,9 @@ class NotificationChannelHandler(BaseChannelHandler):
             return MessageHandlingResult.FAILED
 
         await message.add_reaction(SUCCESS_REACTION)
-        await message.reply(_format_transaction_summary(transaction_data, self.actual_connector))
+        await message.reply(
+            _format_transaction_summary(transaction_data, self.actual_connector)
+        )
         return MessageHandlingResult.IMPORTED
 
     async def _save_transaction(self, transaction_data: ActualTransactionData) -> None:
@@ -101,6 +113,150 @@ class NotificationChannelHandler(BaseChannelHandler):
         async with self.actual_write_lock:
             await asyncio.to_thread(
                 self.actual_connector.save_transaction, transaction_data
+            )
+
+    def _transaction_data_from_message(
+        self, message: discord.Message
+    ) -> ActualTransactionData:
+        """Apply one source-date policy to imports and schedule creation."""
+        notification = self.notification_type.from_message(message.content)
+        created_at = message.created_at
+        if created_at.tzinfo is None:
+            created_at = created_at.replace(tzinfo=UTC)
+        fallback_date = created_at.astimezone(self.timezone).date()
+        return notification.to_transaction(
+            timezone=self.timezone,
+            fallback_date=fallback_date,
+        )
+
+    async def make_schedule(
+        self, ctx: commands.Context, recurrence: ScheduleRecurrence
+    ) -> None:
+        """Create an Actual schedule from the successfully imported reply target."""
+        if self.channel is None or not _same_channel(ctx.channel, self.channel):
+            await ctx.reply(
+                "Error: This command can only be used in the bank notification channel."
+            )
+            return
+
+        source_message = await self._referenced_notification(ctx)
+        if source_message is None:
+            return
+        if not _has_success_reaction(source_message):
+            await ctx.reply(
+                "Error: Reply to a notification that I imported successfully (✅)."
+            )
+            return
+
+        try:
+            transaction_data = self._transaction_data_from_message(source_message)
+        except ParseNotificationError:
+            LOGGER.info(
+                "Schedule source notification %s could not be parsed", source_message.id
+            )
+            await ctx.reply(
+                "Error: The replied-to message is not a supported bank notification."
+            )
+            return
+
+        payee = (transaction_data.imported_payee or "").strip()
+        if not payee:
+            await ctx.reply(
+                "Error: The replied-to notification does not contain a payee."
+            )
+            return
+
+        schedule_data = ActualScheduleData(
+            start=transaction_data.date,
+            account=transaction_data.account,
+            amount=Decimal(str(transaction_data.amount)),
+            payee=payee,
+            name=payee,
+            recurrence=recurrence,
+        )
+        try:
+            status = await self._save_schedule(schedule_data)
+        except ScheduleSourceNotFound:
+            LOGGER.warning(
+                "Schedule source account or payee was not found for message %s",
+                source_message.id,
+            )
+            await ctx.reply(
+                "Error: The notification's account or payee no longer exists in Actual. Nothing was changed."
+            )
+            return
+        except Exception:
+            LOGGER.exception(
+                "Schedule creation failed for notification message %s",
+                source_message.id,
+            )
+            await ctx.reply(
+                "An unexpected error occurred while creating the schedule. The error has been logged."
+            )
+            return
+
+        if status is ScheduleCreationStatus.ALREADY_EXISTS:
+            LOGGER.info(
+                "Schedule already exists for notification message %s", source_message.id
+            )
+            await ctx.reply(
+                f"Schedule **{payee}** already exists. Nothing was changed."
+            )
+            return
+
+        LOGGER.info("Created schedule for notification message %s", source_message.id)
+        await ctx.reply(_format_schedule_summary(schedule_data))
+
+    async def _referenced_notification(
+        self, ctx: commands.Context
+    ) -> discord.Message | None:
+        """Resolve a reply target without allowing another channel's message."""
+        reference = ctx.message.reference
+        if reference is None or reference.message_id is None:
+            await ctx.reply(
+                "Error: Reply to a successfully imported bank notification first."
+            )
+            return None
+        if reference.channel_id is not None and not _same_channel_id(
+            reference.channel_id, self.channel
+        ):
+            await ctx.reply(
+                "Error: Reply to a notification in this bank notification channel."
+            )
+            return None
+
+        resolved = reference.resolved
+        if resolved is not None and not isinstance(
+            resolved, discord.DeletedReferencedMessage
+        ):
+            source_message = resolved
+        else:
+            try:
+                source_message = await self.channel.fetch_message(reference.message_id)  # type: ignore[union-attr]
+            except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+                LOGGER.warning(
+                    "Could not fetch schedule source notification %s",
+                    reference.message_id,
+                )
+                await ctx.reply("Error: The replied-to notification is unavailable.")
+                return None
+        if not _same_channel(source_message.channel, self.channel):
+            await ctx.reply(
+                "Error: Reply to a notification in this bank notification channel."
+            )
+            return None
+        return source_message
+
+    async def _save_schedule(
+        self, schedule_data: ActualScheduleData
+    ) -> ScheduleCreationStatus:
+        if self.actual_write_lock is None:
+            return await asyncio.to_thread(
+                self.actual_connector.create_schedule, schedule_data
+            )
+        async with self.actual_write_lock:
+            return await asyncio.to_thread(
+                self.actual_connector.create_schedule, schedule_data
             )
 
     async def catch_up(
@@ -137,11 +293,7 @@ class NotificationChannelHandler(BaseChannelHandler):
             for reaction in message.reactions
         )
         has_external_reaction = any(
-            not reaction.me
-            or (
-                isinstance(reaction.count, int)
-                and reaction.count > 1
-            )
+            not reaction.me or (isinstance(reaction.count, int) and reaction.count > 1)
             for reaction in message.reactions
         )
         return not has_bot_status or has_external_reaction
@@ -172,4 +324,32 @@ def _format_transaction_summary(
         f"Created transaction: **{payee}**, {abs(transaction_data.amount)} PLN\n"
         f"Budget: **{budget}** · Account: **{transaction_data.account}** · "
         "Category: *Uncategorized*"
+    )
+
+
+def _same_channel(left: object, right: object) -> bool:
+    """Compare Discord channels by identity or stable ID."""
+    return left is right or _same_channel_id(getattr(left, "id", None), right)
+
+
+def _same_channel_id(channel_id: object, channel: object) -> bool:
+    return isinstance(channel_id, int) and channel_id == getattr(channel, "id", None)
+
+
+def _has_success_reaction(message: discord.Message) -> bool:
+    return any(
+        reaction.emoji == SUCCESS_REACTION and reaction.me
+        for reaction in message.reactions
+    )
+
+
+def _format_schedule_summary(schedule_data: ActualScheduleData) -> str:
+    frequency = schedule_data.recurrence.frequency.value.removesuffix("ly")
+    interval = schedule_data.recurrence.interval
+    unit = frequency if interval == 1 else f"{frequency}s"
+    return (
+        f"Created schedule: **{schedule_data.name}**\n"
+        f"Every {interval} {unit} from {schedule_data.start.isoformat()} · "
+        f"{abs(schedule_data.amount)} PLN · Account: **{schedule_data.account}**\n"
+        "Transactions require manual approval."
     )

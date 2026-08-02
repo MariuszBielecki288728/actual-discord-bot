@@ -1,11 +1,23 @@
 import hashlib
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from enum import StrEnum
 
 from actual import Actual
 from actual.database import Accounts, Transactions
-from actual.queries import create_transaction, get_transactions
+from actual.queries import (
+    create_schedule as create_actual_schedule,
+)
+from actual.queries import (
+    create_schedule_config,
+    create_transaction,
+    get_account,
+    get_payee,
+    get_schedules,
+    get_transactions,
+)
 from sqlmodel import select
 
 from actual_discord_bot.bank_imports.models import (
@@ -15,12 +27,33 @@ from actual_discord_bot.bank_imports.models import (
 )
 from actual_discord_bot.config import ActualConfig
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
+from actual_discord_bot.errors import ScheduleSourceNotFound
 from actual_discord_bot.receipts.models import ParsedReceipt
 from actual_discord_bot.receipts.transaction import (
     create_receipt_split_transaction,
     find_matching_transaction,
 )
+from actual_discord_bot.schedules import ScheduleRecurrence
 from actual_discord_bot.transaction_matching import merchant_names_match
+
+
+class ScheduleCreationStatus(StrEnum):
+    """The result of an idempotent schedule creation request."""
+
+    CREATED = "created"
+    ALREADY_EXISTS = "already_exists"
+
+
+@dataclass(frozen=True)
+class ActualScheduleData:
+    """All project-owned inputs required to create one Actual schedule."""
+
+    start: date
+    account: str
+    amount: Decimal
+    payee: str
+    name: str
+    recurrence: ScheduleRecurrence
 
 
 class ActualConnector:
@@ -80,6 +113,49 @@ class ActualConnector:
                 account_name=self.config.account,
                 transaction_date=fallback_date,
             )
+
+    def create_schedule(self, data: ActualScheduleData) -> ScheduleCreationStatus:
+        """Create a never-ending, manually approved schedule if its name is new."""
+        with self._create_actual_manager() as actual:
+            existing = next(
+                (
+                    schedule
+                    for schedule in get_schedules(
+                        actual.session,
+                        include_completed=True,
+                    )
+                    if schedule.name
+                    and schedule.name.casefold() == data.name.casefold()
+                ),
+                None,
+            )
+            if existing is not None:
+                return ScheduleCreationStatus.ALREADY_EXISTS
+
+            account = get_account(actual.session, data.account)
+            payee = get_payee(actual.session, data.payee)
+            if account is None or payee is None:
+                raise ScheduleSourceNotFound
+
+            recurrence = create_schedule_config(
+                start=data.start,
+                interval=data.recurrence.interval,
+                frequency=data.recurrence.frequency.value,
+                end_mode="never",
+                skip_weekend=False,
+            )
+            create_actual_schedule(
+                actual.session,
+                date=recurrence,
+                amount=data.amount,
+                amount_operation="is",
+                name=data.name,
+                payee=payee,
+                account=account,
+                posts_transaction=False,
+            )
+            actual.commit()
+            return ScheduleCreationStatus.CREATED
 
     def list_import_accounts(self) -> tuple[ImportableActualAccount, ...]:
         """Return all currently open accounts available to bank statement imports."""
