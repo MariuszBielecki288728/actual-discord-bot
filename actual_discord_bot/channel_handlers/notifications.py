@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import traceback
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -28,6 +29,7 @@ from actual_discord_bot.schedules import ScheduleRecurrence
 LOGGER = logging.getLogger(__name__)
 ERROR_REACTION = "❌"
 DEFAULT_NOTIFICATION_TIMEZONE = ZoneInfo("Europe/Warsaw")
+MAX_DISCORD_MESSAGE_LENGTH = 2_000
 
 NOTIFICATION_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget notification assistant.**
 
@@ -68,12 +70,14 @@ class NotificationChannelHandler(BaseChannelHandler):
         notification_type: type[BaseNotification] = PekaoNotification,
         timezone: ZoneInfo = DEFAULT_NOTIFICATION_TIMEZONE,
         actual_write_lock: asyncio.Lock | None = None,
+        show_error_tracebacks: bool = True,
     ) -> None:
         super().__init__(channel_name, NOTIFICATION_HELP_MESSAGE)
         self.actual_connector = actual_connector
         self.timezone = timezone
         self.notification_type = notification_type
         self.actual_write_lock = actual_write_lock
+        self.show_error_tracebacks = show_error_tracebacks
 
     def accepts(self, message: discord.Message) -> bool:
         return bool(message.content)
@@ -90,12 +94,15 @@ class NotificationChannelHandler(BaseChannelHandler):
                 "Check that it was forwarded in the expected format."
             )
             return MessageHandlingResult.FAILED
-        except Exception:
+        except Exception as error:
             LOGGER.exception("Error importing bank notification message %s", message.id)
             await message.add_reaction(ERROR_REACTION)
             await message.reply(
-                "An unexpected error occurred while importing the notification. "
-                "The error has been logged."
+                _format_unexpected_error(
+                    "An unexpected error occurred while importing the notification.",
+                    error,
+                    show_traceback=self.show_error_tracebacks,
+                )
             )
             return MessageHandlingResult.FAILED
 
@@ -186,13 +193,17 @@ class NotificationChannelHandler(BaseChannelHandler):
                 "Error: The notification's account or payee no longer exists in Actual. Nothing was changed."
             )
             return
-        except Exception:
+        except Exception as error:
             LOGGER.exception(
                 "Schedule creation failed for notification message %s",
                 source_message.id,
             )
             await ctx.reply(
-                "An unexpected error occurred while creating the schedule. The error has been logged."
+                _format_unexpected_error(
+                    "An unexpected error occurred while creating the schedule.",
+                    error,
+                    show_traceback=self.show_error_tracebacks,
+                )
             )
             return
 
@@ -354,3 +365,27 @@ def _format_schedule_summary(schedule_data: ActualScheduleData) -> str:
         f"{abs(schedule_data.amount)} PLN · Account: **{schedule_data.account}**\n"
         "Transactions require manual approval."
     )
+
+
+def _format_unexpected_error(
+    message: str, error: BaseException, *, show_traceback: bool
+) -> str:
+    """Return a Discord-safe unexpected-error message, optionally with its traceback."""
+    if not show_traceback:
+        return f"{message} The error has been logged."
+
+    prefix = f"{message}\n**Traceback**\n```py\n"
+    suffix = "\n```"
+    formatted_traceback = "".join(traceback.format_exception(error)).strip().replace(
+        "```", "``\u200b`"
+    )
+    max_traceback_length = MAX_DISCORD_MESSAGE_LENGTH - len(prefix) - len(suffix)
+    if len(formatted_traceback) > max_traceback_length:
+        truncation_notice = "\n... traceback truncated"
+        formatted_traceback = (
+            formatted_traceback[
+                : max_traceback_length - len(truncation_notice)
+            ].rstrip()
+            + truncation_notice
+        )
+    return f"{prefix}{formatted_traceback}{suffix}"

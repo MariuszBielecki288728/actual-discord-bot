@@ -563,6 +563,7 @@ async def test_main_configures_optional_receipt_stack(receipt_channel):
         bank_notification_channel="bank",
         token="token",
         hot_reload=False,
+        show_error_tracebacks=False,
     )
     client = MagicMock(start=AsyncMock())
     with (
@@ -581,6 +582,7 @@ async def test_main_configures_optional_receipt_stack(receipt_channel):
         await bot_module.main()
     client.start.assert_awaited_once_with("token")
     assert discord_bot.call_args.kwargs["hot_reload"] is False
+    assert discord_bot.call_args.args[0].show_error_tracebacks is False
     if receipt_channel:
         processor.assert_called_once()
         assert discord_bot.call_args.args[1] is not None

@@ -19,6 +19,7 @@ class DiscordConfig:
     bank_import_channel: str = environ.var(default="")
     receipt_channel: str = environ.var(default="")
     hot_reload: bool = environ.bool_var(default=False)
+    show_error_tracebacks: bool = environ.bool_var(default=True)
 
 
 @environ.config(prefix="BANK_IMPORT")

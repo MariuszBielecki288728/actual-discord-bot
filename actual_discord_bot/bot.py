@@ -288,6 +288,7 @@ async def main() -> None:
         actual_connector,
         timezone=bank_notification_config.timezone,
         actual_write_lock=actual_write_lock,
+        show_error_tracebacks=discord_config.show_error_tracebacks,
     )
     receipt_handler = None
     if discord_config.receipt_channel:
