@@ -83,9 +83,11 @@ async def test_setup_hook_starts_hot_reload_when_source_tree_exists(
     watcher.start.assert_awaited_once()
 
 
-def test_registers_commands(bot):
-    assert bot.get_command("catch_up") is bot.catch_up
-    assert bot.get_command("help") is bot.help
+def test_registers_commands_with_context_only_callbacks(bot):
+    for name in ("catch_up", "help"):
+        command = bot.get_command(name)
+        assert command is not None
+        assert "self" not in command.params
 
 
 @pytest.mark.asyncio
@@ -169,7 +171,9 @@ async def test_help_sends_both_shared_channel_guides():
     receipt_handler.channel = channel
     ctx = AsyncMock()
     ctx.channel = channel
-    await bot.help.callback(bot, ctx)
+    command = bot.get_command("help")
+    assert command is not None
+    await command.callback(ctx)
     assert ctx.send.await_args_list == [
         ((RECEIPT_HELP_MESSAGE,), {}),
         ((NOTIFICATION_HELP_MESSAGE,), {}),
@@ -182,7 +186,9 @@ async def test_catch_up_delegates_to_notification_handler(bot):
     with patch.object(
         bot.notification_handler, "catch_up", new=AsyncMock()
     ) as catch_up:
-        await bot.catch_up.callback(bot, ctx)
+        command = bot.get_command("catch_up")
+        assert command is not None
+        await command.callback(ctx)
     catch_up.assert_awaited_once_with(ctx)
 
 

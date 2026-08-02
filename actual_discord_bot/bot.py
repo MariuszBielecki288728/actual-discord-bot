@@ -39,8 +39,15 @@ class ActualDiscordBot(commands.Bot):
         self.notification_handler = notification_handler
         self.receipt_handler = receipt_handler
         self.hot_reload = hot_reload
-        self.add_command(self.catch_up)
-        self.add_command(self.help)
+
+        async def catch_up_command(ctx: commands.Context) -> None:
+            await self._catch_up(ctx)
+
+        async def help_command(ctx: commands.Context) -> None:
+            await self._help(ctx)
+
+        self.add_command(commands.Command(catch_up_command, name="catch_up"))
+        self.add_command(commands.Command(help_command, name="help"))
         self.handlers: tuple[BaseChannelHandler, ...] = tuple(
             handler
             for handler in (receipt_handler, notification_handler)
@@ -85,13 +92,11 @@ class ActualDiscordBot(commands.Bot):
                     )
                 return
 
-    @commands.command(name="catch_up")  # type: ignore[type-var]
-    async def catch_up(self, ctx: commands.Context) -> None:
+    async def _catch_up(self, ctx: commands.Context) -> None:
         """Retry notification messages that have not yet been imported."""
         await self.notification_handler.catch_up(ctx)
 
-    @commands.command(name="help")  # type: ignore[type-var]
-    async def help(self, ctx: commands.Context) -> None:
+    async def _help(self, ctx: commands.Context) -> None:
         """Show the guide or guides for the current channel."""
         matching_handlers = [
             handler for handler in self.handlers if handler.matches(ctx.channel)
