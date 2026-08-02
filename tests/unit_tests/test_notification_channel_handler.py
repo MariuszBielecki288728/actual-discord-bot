@@ -9,6 +9,7 @@ from actual_discord_bot.channel_handlers.notifications import (
     ERROR_REACTION,
     MessageHandlingResult,
     NotificationChannelHandler,
+    _format_unexpected_error,
 )
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
 from actual_discord_bot.errors import ParseNotificationError
@@ -63,7 +64,7 @@ async def test_parse_error_is_marked_and_explained(handler):
 
 
 @pytest.mark.asyncio
-async def test_unexpected_error_is_logged_and_translated_to_a_discord_reply(handler):
+async def test_unexpected_error_includes_a_markdown_traceback_by_default(handler):
     message = AsyncMock(spec=discord.Message)
     message.id = 1
     message.content = "notification"
@@ -73,10 +74,51 @@ async def test_unexpected_error_is_logged_and_translated_to_a_discord_reply(hand
 
     assert result is MessageHandlingResult.FAILED
     message.add_reaction.assert_awaited_once_with(ERROR_REACTION)
+    reply = message.reply.await_args.args[0]
+    assert reply.startswith(
+        "An unexpected error occurred while importing the notification.\n"
+        "**Traceback**\n```py\nTraceback (most recent call last):"
+    )
+    assert "RuntimeError: connection lost" in reply
+    assert reply.endswith("\n```")
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_hides_the_traceback_when_disabled():
+    handler = NotificationChannelHandler(
+        "bank", MagicMock(), MagicMock(), show_error_tracebacks=False
+    )
+    message = AsyncMock(spec=discord.Message)
+    message.id = 1
+    message.content = "notification"
+    handler.notification_type.from_message.side_effect = RuntimeError("connection lost")
+
+    result = await handler.handle(message)
+
+    assert result is MessageHandlingResult.FAILED
     message.reply.assert_awaited_once_with(
         "An unexpected error occurred while importing the notification. "
         "The error has been logged."
     )
+
+
+def test_unexpected_error_traceback_fits_in_a_discord_message():
+    reply = _format_unexpected_error(
+        "An unexpected error occurred.", RuntimeError("x" * 3_000), show_traceback=True
+    )
+
+    assert len(reply) <= 2_000
+    assert "... traceback truncated" in reply
+    assert reply.endswith("\n```")
+
+
+def test_unexpected_error_escapes_markdown_fences_in_the_traceback():
+    reply = _format_unexpected_error(
+        "An unexpected error occurred.", RuntimeError("```"), show_traceback=True
+    )
+
+    assert reply.count("```") == 2
+    assert "``\u200b`" in reply
 
 
 @pytest.mark.asyncio

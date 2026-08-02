@@ -274,3 +274,31 @@ async def test_make_schedule_translates_missing_actual_sources():
     ctx.reply.assert_awaited_once_with(
         "Error: The notification's account or payee no longer exists in Actual. Nothing was changed."
     )
+
+
+@pytest.mark.asyncio
+async def test_make_schedule_includes_a_markdown_traceback_for_unexpected_errors():
+    channel = MagicMock(id=10)
+    source = _message(channel)
+    ctx = MagicMock(channel=channel, reply=AsyncMock())
+    ctx.message.reference = MagicMock(message_id=101, channel_id=10, resolved=source)
+    connector = MagicMock()
+    connector.create_schedule.side_effect = RuntimeError("connection lost")
+    handler = NotificationChannelHandler("bank", connector)
+    handler.channel = channel
+    with patch.object(
+        handler,
+        "_transaction_data_from_message",
+        return_value=ActualTransactionData(
+            date(2024, 9, 23), "Pekao", Decimal("-1"), "Shop"
+        ),
+    ):
+        await handler.make_schedule(ctx, ScheduleRecurrence())
+
+    reply = ctx.reply.await_args.args[0]
+    assert reply.startswith(
+        "An unexpected error occurred while creating the schedule.\n"
+        "**Traceback**\n```py\nTraceback (most recent call last):"
+    )
+    assert "RuntimeError: connection lost" in reply
+    assert reply.endswith("\n```")

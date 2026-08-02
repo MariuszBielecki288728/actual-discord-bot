@@ -10,6 +10,7 @@ services:
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - DISCORD_HOT_RELOAD=true
+      - DISCORD_SHOW_ERROR_TRACEBACKS=${DISCORD_SHOW_ERROR_TRACEBACKS:-true}
       - ACTUAL_URL=http://actual_server:5006
       - ACTUAL_PASSWORD=${ACTUAL_PASSWORD}
       - ACTUAL_FILE=${ACTUAL_FILE}
