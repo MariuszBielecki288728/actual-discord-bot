@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
 
@@ -128,3 +128,19 @@ async def test_catch_up_retries_user_marked_messages_and_removes_the_marker(hand
 
     handler.handle.assert_awaited_once_with(failed_import)
     failed_import.remove_reaction.assert_awaited_once_with("🔄", user)
+
+
+@pytest.mark.asyncio
+async def test_catch_up_limits_channel_history_to_the_requested_time(handler):
+    channel = AsyncMock(spec=discord.TextChannel)
+    handler.channel = channel
+    channel.history.return_value.__aiter__.return_value = []
+    ctx = MagicMock()
+    ctx.send = AsyncMock()
+    ctx.typing.return_value.__aenter__ = AsyncMock(return_value=None)
+    ctx.typing.return_value.__aexit__ = AsyncMock(return_value=None)
+    after = datetime(2026, 8, 1, tzinfo=UTC)
+
+    await handler.catch_up(ctx, after=after)
+
+    channel.history.assert_called_once_with(limit=None, after=after)

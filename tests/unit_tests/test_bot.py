@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
@@ -6,6 +7,11 @@ import pytest
 
 import actual_discord_bot.bot as bot_module
 from actual_discord_bot import ActualDiscordBot
+from actual_discord_bot.bot import (
+    CATCH_UP_TIME_DELTA_ERROR,
+    CatchUpTimeDeltaError,
+    parse_catch_up_after,
+)
 from actual_discord_bot.channel_handlers.notifications import (
     NOTIFICATION_HELP_MESSAGE,
     NotificationChannelHandler,
@@ -83,11 +89,15 @@ async def test_setup_hook_starts_hot_reload_when_source_tree_exists(
     watcher.start.assert_awaited_once()
 
 
-def test_registers_commands_with_context_only_callbacks(bot):
+def test_registers_commands_without_self_parameter(bot):
     for name in ("catch_up", "help"):
         command = bot.get_command(name)
         assert command is not None
         assert "self" not in command.params
+
+    catch_up = bot.get_command("catch_up")
+    assert catch_up is not None
+    assert "time_delta" in catch_up.params
 
 
 @pytest.mark.asyncio
@@ -190,6 +200,69 @@ async def test_catch_up_delegates_to_notification_handler(bot):
         assert command is not None
         await command.callback(ctx)
     catch_up.assert_awaited_once_with(ctx)
+
+
+@pytest.mark.asyncio
+async def test_catch_up_passes_valid_lookback_to_notification_handler(bot):
+    ctx = AsyncMock()
+    now = datetime(2026, 8, 2, 15, 30, tzinfo=UTC)
+    with (
+        patch.object(bot_module.discord.utils, "utcnow", return_value=now),
+        patch.object(bot.notification_handler, "catch_up", new=AsyncMock()) as catch_up,
+    ):
+        command = bot.get_command("catch_up")
+        assert command is not None
+        await command.callback(ctx, time_delta="2 days")
+
+    catch_up.assert_awaited_once_with(
+        ctx, after=datetime(2026, 7, 31, 15, 30, tzinfo=UTC)
+    )
+
+
+@pytest.mark.asyncio
+async def test_catch_up_rejects_invalid_lookback_without_processing(bot):
+    ctx = AsyncMock()
+    with patch.object(
+        bot.notification_handler, "catch_up", new=AsyncMock()
+    ) as catch_up:
+        command = bot.get_command("catch_up")
+        assert command is not None
+        await command.callback(ctx, time_delta="a few days")
+
+    ctx.send.assert_awaited_once_with(CATCH_UP_TIME_DELTA_ERROR)
+    catch_up.assert_not_awaited()
+
+
+@pytest.mark.parametrize(
+    ("time_delta", "now", "expected"),
+    [
+        (
+            "1 hour",
+            datetime(2026, 8, 2, 15, 30, tzinfo=UTC),
+            datetime(2026, 8, 2, 14, 30, tzinfo=UTC),
+        ),
+        (
+            "12 DAYS",
+            datetime(2026, 8, 2, 15, 30, tzinfo=UTC),
+            datetime(2026, 7, 21, 15, 30, tzinfo=UTC),
+        ),
+        (
+            "6 months",
+            datetime(2026, 8, 31, 15, 30, tzinfo=UTC),
+            datetime(2026, 2, 28, 15, 30, tzinfo=UTC),
+        ),
+    ],
+)
+def test_parse_catch_up_after_supports_hours_days_and_calendar_months(
+    time_delta, now, expected
+):
+    assert parse_catch_up_after(time_delta, now) == expected
+
+
+@pytest.mark.parametrize("time_delta", ["0 hours", "two days", "1 week", "1day"])
+def test_parse_catch_up_after_rejects_invalid_time_deltas(time_delta):
+    with pytest.raises(CatchUpTimeDeltaError):
+        parse_catch_up_after(time_delta, datetime(2026, 8, 2, tzinfo=UTC))
 
 
 @pytest.mark.asyncio

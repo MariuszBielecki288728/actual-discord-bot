@@ -56,7 +56,7 @@ an existing receipt.
 - **Transaction deduplication** — Prevents duplicate transactions when both a receipt and bank notification arrive for the same purchase
 - **Split transactions** — Each product line item becomes a sub-transaction in Actual Budget
 - **Discount handling** — Recognizes OBNIŻKA/RABAT/UPUST discount lines and includes them as negative sub-transactions
-- **Idempotent catch-up** — `!catch_up` command processes all unprocessed messages in the channel (skips already-reacted ones)
+- **Idempotent catch-up** — `!catch_up` processes all unprocessed messages in the channel (skips already-reacted ones), or accepts a lookback such as `!catch_up 2 days`
 - **In-channel guidance** — Posts a complete usage guide on startup and provides it on demand with `!help`
 - **Hot-reload** — Uses [cogwatch](https://github.com/robertwayne/cogwatch) only in the development Compose stack
 - **Dockerized deployment** — Full Docker Compose setup with bot, Actual server, and integration test services
@@ -288,7 +288,7 @@ without hot reload rather than blocking Discord startup.
 | Command | Description |
 |---------|-------------|
 | `!help` | Show the full channel guide, reactions, supported inputs, and commands |
-| `!catch_up` | Process all unprocessed messages in the notification channel |
+| `!catch_up [X hour(s)\|X day(s)\|X month(s)]` | Process all unprocessed messages in the notification channel, optionally limited to a lookback window |
 
 ### Discord Channel Setup
 
