@@ -2,7 +2,7 @@ name: actual-budget-home
 
 services:
   actual_server:
-    image: docker.io/actualbudget/actual-server:26.4.0
+    image: docker.io/actualbudget/actual-server:26.8.0
     restart: unless-stopped
     ports:
       - "12012:5006"
