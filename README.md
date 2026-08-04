@@ -291,7 +291,7 @@ OCR_TESSERACT_PSM=6                     # Tesseract page segmentation mode (defa
 | `DISCORD_BANK_IMPORT_CHANNEL` | No | Private channel for one-file bank CSV imports |
 | `DISCORD_RECEIPT_CHANNEL` | No | Name of the channel for receipt photos/PDFs |
 | `DISCORD_HOT_RELOAD` | No | Enable source watching in a development checkout (default: `false`) |
-| `DISCORD_SHOW_ERROR_TRACEBACKS` | No | Include formatted tracebacks in Discord replies for unexpected notification and schedule errors (default: `true`); set to `false` for shared channels |
+| `DISCORD_SHOW_ERROR_TRACEBACKS` | No | Include formatted tracebacks in Discord replies for unexpected notification, receipt, and schedule errors (default: `true`); set to `false` for shared channels |
 | `BANK_NOTIFICATION_TIMEZONE` | No | IANA timezone used for forwarded notification timestamps and schedules (default: `Europe/Warsaw`) |
 | `BANK_IMPORT_TIMEZONE` | No | IANA timezone for bank-import calendar months (default: `Europe/Warsaw`) |
 | `ACTUAL_URL` | Yes | Actual Budget server URL |

@@ -332,6 +332,45 @@ Data: 15.03.2026 Czas: 10:30
         receipt = parser.parse(text, source="pdf")
         assert receipt.date == date(2026, 3, 15)
 
+    def test_kaufland_app_screenshot_ocr_format(self, parser):
+        text = """\
+20:22 © 3 ul GM
+Podsumowanie zakupów
+Kaufland Wrocław-Szczepin
+ul. Długa 37/47
+Wrocław
+Cena w
+Torba zakupowa 0,89
+Kubuś100%BanJabBrzos 4,49
+butelkaPET 0,50
+PiątnicaSkyrNat150g 3,19
+CedrobKurczakGotowany 4,28
+Krasnystawkefir420g 2,89
+ActiviaDoPicia270g 4,99
+Zupa krem z dyni450G 6,29
+TwójSmakSerek150g 4,99
+Smaki Victorii 250ml 4,69
+Banany kg 6,67
+STD Pol Pomidor mięs cze... 5,33
+Winogrono jasne bezp. 50... 9,99
+Chleb Baltonowski 500g 2,29
+Suma none 61,48
+Podatek % Brutto Netto Podatek
+A 23% 0,89 0,72 0,17
+"""
+
+        receipt = parser.parse(text, source="photo")
+
+        assert receipt.store_name == "Kaufland Wrocław-Szczepin"
+        assert receipt.total == Decimal("61.48")
+        assert receipt.source == "photo"
+        assert len(receipt.items) == 14
+        assert receipt.items[0].name == "Torba zakupowa"
+        assert receipt.items[0].total_price == Decimal("0.89")
+        assert receipt.items[-1].name == "Chleb Baltonowski 500g"
+        assert receipt.items[-1].total_price == Decimal("2.29")
+        assert ReceiptProcessor.validate_receipt(receipt) == (True, Decimal("0.00"))
+
 
 class TestWeightedItems:
     """Test parsing of weighted/measured items."""

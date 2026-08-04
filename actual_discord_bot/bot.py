@@ -301,6 +301,7 @@ async def main() -> None:
             actual_connector,
             receipt_processor,
             actual_write_lock=actual_write_lock,
+            show_error_tracebacks=discord_config.show_error_tracebacks,
         )
     bank_import_handler = None
     bank_import_channel = getattr(discord_config, "bank_import_channel", "")

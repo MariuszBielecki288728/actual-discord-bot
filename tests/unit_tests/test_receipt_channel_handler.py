@@ -93,3 +93,42 @@ async def test_processing_error_is_translated_to_discord_reply(handler, message)
     await handler.handle(message)
     message.add_reaction.assert_awaited_with("❌")
     assert "bad OCR" in message.reply.call_args.args[0]
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_includes_a_markdown_traceback_by_default(
+    handler, message
+):
+    handler.receipt_processor.process_image_bytes.side_effect = RuntimeError(
+        "tesseract missing"
+    )
+
+    await handler.handle(message)
+
+    reply = message.reply.await_args.args[0]
+    assert reply.startswith(
+        "An unexpected error occurred while processing the receipt.\n"
+        "**Traceback**\n```py\nTraceback (most recent call last):"
+    )
+    assert "RuntimeError: tesseract missing" in reply
+    assert reply.endswith("\n```")
+
+
+@pytest.mark.asyncio
+async def test_unexpected_error_hides_the_traceback_when_disabled(message):
+    handler = ReceiptChannelHandler(
+        "receipts",
+        MagicMock(),
+        MagicMock(spec=ReceiptProcessor),
+        show_error_tracebacks=False,
+    )
+    handler.receipt_processor.process_image_bytes.side_effect = RuntimeError(
+        "tesseract missing"
+    )
+
+    await handler.handle(message)
+
+    message.reply.assert_awaited_once_with(
+        "An unexpected error occurred while processing the receipt. "
+        "The error has been logged."
+    )

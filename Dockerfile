@@ -66,6 +66,12 @@ WORKDIR /app
 
 FROM python-base AS production
 
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y \
+    tesseract-ocr \
+    tesseract-ocr-pol \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder-base $VENV_PATH $VENV_PATH
 COPY --from=builder-base $PYSETUP_PATH/dist .
 # The builder virtualenv already contains the lockfile-resolved VCS dependency.

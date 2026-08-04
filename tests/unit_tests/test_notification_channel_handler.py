@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
+from actual_discord_bot.channel_handlers.base import format_unexpected_error
 from actual_discord_bot.channel_handlers.notifications import (
     ERROR_REACTION,
     MessageHandlingResult,
     NotificationChannelHandler,
-    _format_unexpected_error,
 )
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
 from actual_discord_bot.errors import ParseNotificationError
@@ -103,7 +103,7 @@ async def test_unexpected_error_hides_the_traceback_when_disabled():
 
 
 def test_unexpected_error_traceback_fits_in_a_discord_message():
-    reply = _format_unexpected_error(
+    reply = format_unexpected_error(
         "An unexpected error occurred.", RuntimeError("x" * 3_000), show_traceback=True
     )
 
@@ -113,7 +113,7 @@ def test_unexpected_error_traceback_fits_in_a_discord_message():
 
 
 def test_unexpected_error_escapes_markdown_fences_in_the_traceback():
-    reply = _format_unexpected_error(
+    reply = format_unexpected_error(
         "An unexpected error occurred.", RuntimeError("```"), show_traceback=True
     )
 
