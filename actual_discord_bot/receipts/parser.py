@@ -99,6 +99,14 @@ PRICE_ONLY_RE = re.compile(
 # Standalone price line (used in PDF digital receipts)
 STANDALONE_PRICE_RE = re.compile(r"^-?[\d]+[.,]\d{2}$")
 
+# OCR from app screenshots places the product name and price on the same line.
+DIGITAL_PRODUCT_LINE_RE = re.compile(
+    r"^(?P<name>.+?\S)\s+(?P<total_price>-?[\d]+[.,]\d{2})$"
+)
+DIGITAL_TOTAL_LINE_RE = re.compile(
+    r"^Suma(?:\s+\S+)*\s+(?P<total>[\d]+[.,]\d{2})$", re.IGNORECASE
+)
+
 PARTIAL_PRODUCT_LINE_RE = re.compile(
     r"^.+\s+[\d]+[.,]?\d*\s*[x\N{MULTIPLICATION SIGN}*]\s*-?[\d]+[.,]\d{2}$",
 )
@@ -210,9 +218,15 @@ class ReceiptParser:
 
     def _extract_digital_store_name(self, lines: list[str]) -> str:
         """Extract store name from digital receipt header."""
+        after_summary = False
         for line in lines:
             stripped = _normalize_ocr_line(line.strip())
-            if stripped and "Podsumowanie" not in stripped and "Cena" not in stripped:
+            if "Podsumowanie" in stripped:
+                after_summary = True
+                continue
+            if after_summary and "Cena" in stripped:
+                break
+            if after_summary and stripped:
                 return stripped
         return "Unknown"
 
@@ -237,9 +251,12 @@ class ReceiptParser:
                 i += 1
                 continue
 
+            if total_match := DIGITAL_TOTAL_LINE_RE.match(stripped):
+                total = _parse_decimal(total_match.group("total"))
+                break
+
             if stripped.lower() == "suma":
-                if items:
-                    total = items.pop().total_price
+                total = items.pop().total_price if items else total
                 i += 1
                 continue
 
@@ -251,11 +268,21 @@ class ReceiptParser:
                 result = self._try_consume_name(lines, i, price, items)
                 if result is not None:
                     i, found_total = result
-                    if found_total is not None:
-                        total = found_total
+                    total = found_total if found_total is not None else total
                     continue
                 i += 1
                 continue
+
+            if product_match := DIGITAL_PRODUCT_LINE_RE.match(stripped):
+                price = _parse_decimal(product_match.group("total_price"))
+                items.append(
+                    ReceiptItem(
+                        name=product_match.group("name"),
+                        quantity=Decimal("1"),
+                        unit_price=price,
+                        total_price=price,
+                    )
+                )
 
             i += 1
 

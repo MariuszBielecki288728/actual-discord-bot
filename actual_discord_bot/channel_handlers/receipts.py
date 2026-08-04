@@ -11,6 +11,7 @@ from actual_discord_bot.actual_connector import ActualConnector
 from actual_discord_bot.channel_handlers.base import (
     SUCCESS_REACTION,
     BaseChannelHandler,
+    format_unexpected_error,
 )
 from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
 from actual_discord_bot.receipts.processor import (
@@ -49,11 +50,13 @@ class ReceiptChannelHandler(BaseChannelHandler):
         receipt_processor: ReceiptProcessor,
         processing_slots: int = 1,
         actual_write_lock: asyncio.Lock | None = None,
+        show_error_tracebacks: bool = True,
     ) -> None:
         super().__init__(channel_name, RECEIPT_HELP_MESSAGE)
         self.actual_connector = actual_connector
         self.receipt_processor = receipt_processor
         self.actual_write_lock = actual_write_lock
+        self.show_error_tracebacks = show_error_tracebacks
         self.processing_slots = asyncio.Semaphore(processing_slots)
 
     def accepts(self, message: discord.Message) -> bool:
@@ -75,11 +78,15 @@ class ReceiptChannelHandler(BaseChannelHandler):
         except ReceiptProcessingError as error:
             await message.add_reaction(REACTION_ERROR)
             await message.reply(f"Could not process receipt: {error}")
-        except Exception:
+        except Exception as error:
             LOGGER.exception("Error processing receipt from message %s", message.id)
             await message.add_reaction(REACTION_ERROR)
             await message.reply(
-                "An unexpected error occurred while processing the receipt."
+                format_unexpected_error(
+                    "An unexpected error occurred while processing the receipt.",
+                    error,
+                    show_traceback=self.show_error_tracebacks,
+                )
             )
 
     async def _process_attachment(

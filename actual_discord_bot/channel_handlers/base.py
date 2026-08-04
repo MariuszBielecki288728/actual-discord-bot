@@ -1,6 +1,7 @@
 """Common lifecycle behavior for configured Discord channels."""
 
 import logging
+import traceback
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 
@@ -8,6 +9,7 @@ import discord
 
 LOGGER = logging.getLogger(__name__)
 SUCCESS_REACTION = "✅"
+MAX_DISCORD_MESSAGE_LENGTH = 2_000
 
 
 class BaseChannelHandler(ABC):
@@ -78,3 +80,27 @@ class BaseChannelHandler(ABC):
     @abstractmethod
     async def handle(self, message: discord.Message) -> object:
         """Handle a message accepted by this channel workflow."""
+
+
+def format_unexpected_error(
+    message: str, error: BaseException, *, show_traceback: bool
+) -> str:
+    """Return a Discord-safe unexpected-error message, optionally with its traceback."""
+    if not show_traceback:
+        return f"{message} The error has been logged."
+
+    prefix = f"{message}\n**Traceback**\n```py\n"
+    suffix = "\n```"
+    formatted_traceback = (
+        "".join(traceback.format_exception(error)).strip().replace("```", "``\u200b`")
+    )
+    max_traceback_length = MAX_DISCORD_MESSAGE_LENGTH - len(prefix) - len(suffix)
+    if len(formatted_traceback) > max_traceback_length:
+        truncation_notice = "\n... traceback truncated"
+        formatted_traceback = (
+            formatted_traceback[
+                : max_traceback_length - len(truncation_notice)
+            ].rstrip()
+            + truncation_notice
+        )
+    return f"{prefix}{formatted_traceback}{suffix}"

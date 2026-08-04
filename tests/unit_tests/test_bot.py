@@ -586,6 +586,7 @@ async def test_main_configures_optional_receipt_stack(receipt_channel):
     if receipt_channel:
         processor.assert_called_once()
         assert discord_bot.call_args.args[1] is not None
+        assert discord_bot.call_args.args[1].show_error_tracebacks is False
     else:
         processor.assert_not_called()
         assert discord_bot.call_args.args[1] is None

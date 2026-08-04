@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-import traceback
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -21,6 +20,7 @@ from actual_discord_bot.bank_notifications.base_notification import BaseNotifica
 from actual_discord_bot.channel_handlers.base import (
     SUCCESS_REACTION,
     BaseChannelHandler,
+    format_unexpected_error,
 )
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
 from actual_discord_bot.errors import ParseNotificationError, ScheduleSourceNotFound
@@ -29,7 +29,6 @@ from actual_discord_bot.schedules import ScheduleRecurrence
 LOGGER = logging.getLogger(__name__)
 ERROR_REACTION = "❌"
 DEFAULT_NOTIFICATION_TIMEZONE = ZoneInfo("Europe/Warsaw")
-MAX_DISCORD_MESSAGE_LENGTH = 2_000
 
 NOTIFICATION_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget notification assistant.**
 
@@ -98,7 +97,7 @@ class NotificationChannelHandler(BaseChannelHandler):
             LOGGER.exception("Error importing bank notification message %s", message.id)
             await message.add_reaction(ERROR_REACTION)
             await message.reply(
-                _format_unexpected_error(
+                format_unexpected_error(
                     "An unexpected error occurred while importing the notification.",
                     error,
                     show_traceback=self.show_error_tracebacks,
@@ -199,7 +198,7 @@ class NotificationChannelHandler(BaseChannelHandler):
                 source_message.id,
             )
             await ctx.reply(
-                _format_unexpected_error(
+                format_unexpected_error(
                     "An unexpected error occurred while creating the schedule.",
                     error,
                     show_traceback=self.show_error_tracebacks,
@@ -365,27 +364,3 @@ def _format_schedule_summary(schedule_data: ActualScheduleData) -> str:
         f"{abs(schedule_data.amount)} PLN · Account: **{schedule_data.account}**\n"
         "Transactions require manual approval."
     )
-
-
-def _format_unexpected_error(
-    message: str, error: BaseException, *, show_traceback: bool
-) -> str:
-    """Return a Discord-safe unexpected-error message, optionally with its traceback."""
-    if not show_traceback:
-        return f"{message} The error has been logged."
-
-    prefix = f"{message}\n**Traceback**\n```py\n"
-    suffix = "\n```"
-    formatted_traceback = "".join(traceback.format_exception(error)).strip().replace(
-        "```", "``\u200b`"
-    )
-    max_traceback_length = MAX_DISCORD_MESSAGE_LENGTH - len(prefix) - len(suffix)
-    if len(formatted_traceback) > max_traceback_length:
-        truncation_notice = "\n... traceback truncated"
-        formatted_traceback = (
-            formatted_traceback[
-                : max_traceback_length - len(truncation_notice)
-            ].rstrip()
-            + truncation_notice
-        )
-    return f"{prefix}{formatted_traceback}{suffix}"
