@@ -38,6 +38,9 @@ LOGGER = logging.getLogger(__name__)
 CATCH_UP_TIME_DELTA_ERROR = (
     "Error: Invalid time delta. Use X hour(s), X day(s), or X month(s)."
 )
+CATCH_UP_CHANNEL_ERROR = (
+    "Error: This command can only be used in the bank notification channel."
+)
 BULK_DELETE_SAFE_AGE = timedelta(days=13, hours=23)
 MAX_BULK_DELETE_MESSAGES = 100
 
@@ -140,7 +143,11 @@ class ActualDiscordBot(commands.Bot):
                 return
 
     async def _catch_up(self, ctx: commands.Context, time_delta: str = "") -> None:
-        """Retry notification messages that have not yet been imported."""
+        """Retry notification messages in the invoking notification channel."""
+        if not self.notification_handler.matches(ctx.channel):
+            await ctx.send(CATCH_UP_CHANNEL_ERROR)
+            return
+
         try:
             after = parse_catch_up_after(time_delta, discord.utils.utcnow())
         except CatchUpTimeDeltaError:
