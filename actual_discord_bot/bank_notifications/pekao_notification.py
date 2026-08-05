@@ -37,6 +37,13 @@ class PekaoNotification(BaseNotification):
         ),
         NotificationTemplate(
             re.compile(
+                r"Zapłacono BLIK-iem na kwotę (?P<amount>.+) PLN z konta .+ "
+                r"w (?P<payee>.+)\. Bank Pekao S\.A\.",
+            ),
+            TransactionType.PAYMENT,
+        ),
+        NotificationTemplate(
+            re.compile(
                 r"\s*Wykonano doładowanie telefonu .+ na kwotę (?P<amount>.+) PLN z konta.+, operator: (?P<payee>.+)\. Bank Pekao S\.A\.",
             ),
             TransactionType.PAYMENT,
