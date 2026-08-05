@@ -43,6 +43,16 @@ Bank: Pekao""",
                 bank="Pekao",
             ),
         ),
+        (
+            """Title: Wykonano operację BLIK
+Text: Zapłacono BLIK-iem na kwotę 266,33 PLN z konta *0852 w PAYPRO S.A.. Bank Pekao S.A.
+Bank: Pekao""",
+            PekaoNotification(
+                title="Wykonano operację BLIK",
+                text="Zapłacono BLIK-iem na kwotę 266,33 PLN z konta *0852 w PAYPRO S.A.. Bank Pekao S.A.",
+                bank="Pekao",
+            ),
+        ),
     ],
 )
 def test_from_message(message: str, expected_notification: PekaoNotification):
@@ -115,6 +125,19 @@ def test_from_message(message: str, expected_notification: PekaoNotification):
                 account="Pekao",
                 amount=-Decimal("30.00"),
                 imported_payee="ATT",
+            ),
+        ),
+        (
+            PekaoNotification(
+                title="Wykonano operację BLIK",
+                text="Zapłacono BLIK-iem na kwotę 266,33 PLN z konta *0852 w PAYPRO S.A.. Bank Pekao S.A.",
+                bank="Pekao",
+            ),
+            ActualTransactionData(
+                date=date(2024, 9, 20),
+                account="Pekao",
+                amount=-Decimal("266.33"),
+                imported_payee="PAYPRO S.A.",
             ),
         ),
     ],
