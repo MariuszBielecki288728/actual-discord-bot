@@ -35,6 +35,7 @@ I react with ✅ and reply with a summary when a transaction is created. ⚠️ 
 
 **Commands**
 `!help` — show this receipt guide
+`!catch_up [X hour(s)|X day(s)|X month(s)]` — reprocess receipt messages in this channel
 `!clear_channel` — permanently delete all deletable messages in this watched channel. Requires your Manage Messages permission.
 
 Receipts may contain sensitive information, so only post them in a private channel that is visible to people you trust."""

@@ -40,7 +40,7 @@ Timestamp: <timestamp>
 ```
 I react with ✅ and reply with a summary when a transaction is created. If a notification cannot be read or imported, I react with ❌ and reply with the reason. Unexpected import errors are logged for troubleshooting.
 
-`!catch_up` skips my own messages and messages marked with my ✅ or ❌. Add a lookback such as `!catch_up 2 days` to process only recent messages. To request a retry, add any reaction to the message; I will try it again and remove that reaction afterwards, whether the retry succeeds or fails.
+`!catch_up` reprocesses messages in this channel, skipping my own messages and those marked with my ✅ or ❌. Add a lookback such as `!catch_up 2 days` to process only recent messages. To request a retry, add any reaction to the message; I will try it again and remove that reaction afterwards, whether the retry succeeds or fails.
 
 **How notifications reach this channel**
 An administrator can create a Discord webhook for this channel in **Edit Channel → Integrations → Webhooks**. Its webhook URL is the special link that can post messages here—keep it private. On Android, an Automate flow can listen only for notifications from your bank app and send an HTTP POST to that URL, using `application/json` and the format above in the JSON `content` field. Never put your Discord bot token or Actual password in the flow or channel.

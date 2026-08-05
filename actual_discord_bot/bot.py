@@ -39,7 +39,7 @@ CATCH_UP_TIME_DELTA_ERROR = (
     "Error: Invalid time delta. Use X hour(s), X day(s), or X month(s)."
 )
 CATCH_UP_CHANNEL_ERROR = (
-    "Error: This command can only be used in the bank notification channel."
+    "Error: This command can only be used in a configured watched channel."
 )
 BULK_DELETE_SAFE_AGE = timedelta(days=13, hours=23)
 MAX_BULK_DELETE_MESSAGES = 100
@@ -143,8 +143,11 @@ class ActualDiscordBot(commands.Bot):
                 return
 
     async def _catch_up(self, ctx: commands.Context, time_delta: str = "") -> None:
-        """Retry notification messages in the invoking notification channel."""
-        if not self.notification_handler.matches(ctx.channel):
+        """Reprocess eligible history in the invoking watched channel."""
+        handler = next(
+            (handler for handler in self.handlers if handler.matches(ctx.channel)), None
+        )
+        if handler is None:
             await ctx.send(CATCH_UP_CHANNEL_ERROR)
             return
 
@@ -155,9 +158,9 @@ class ActualDiscordBot(commands.Bot):
             return
 
         if after is None:
-            await self.notification_handler.catch_up(ctx)
+            await handler.catch_up(ctx)
             return
-        await self.notification_handler.catch_up(ctx, after=after)
+        await handler.catch_up(ctx, after=after)
 
     async def _help(self, ctx: commands.Context) -> None:
         """Show the guide or guides for the current channel."""
