@@ -7,6 +7,14 @@ applyTo: '**/*.py'
 
 A Discord bot that creates Actual Budget transactions from bank push notifications forwarded via Android's Automate app, and from receipt photos/PDFs posted to a dedicated channel.
 
+## Repository-wide agent guidance
+
+Read the repository-root [`AGENTS.md`](../../AGENTS.md) before investigating a
+production issue. It is the authoritative Lenovo log-access, privacy, and deployment
+boundary guide. In particular, this repository may inspect production read-only but
+must not deploy or mutate the Lenovo; deployment is performed from
+`/root/my-nixos-configuration`.
+
 ## Tech Stack
 
 - **Python 3.13** with **Poetry** for dependency management

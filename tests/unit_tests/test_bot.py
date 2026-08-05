@@ -11,6 +11,7 @@ import actual_discord_bot.bot as bot_module
 from actual_discord_bot import ActualDiscordBot
 from actual_discord_bot.bot import (
     BULK_DELETE_SAFE_AGE,
+    CATCH_UP_CHANNEL_ERROR,
     CATCH_UP_TIME_DELTA_ERROR,
     CatchUpTimeDeltaError,
     ClearChannelResult,
@@ -450,6 +451,9 @@ async def test_help_sends_both_shared_channel_guides():
 @pytest.mark.asyncio
 async def test_catch_up_delegates_to_notification_handler(bot):
     ctx = AsyncMock()
+    notification_channel = _channel(1, "bank-notifications")
+    bot.notification_handler.channel = notification_channel
+    ctx.channel = notification_channel
     with patch.object(
         bot.notification_handler, "catch_up", new=AsyncMock()
     ) as catch_up:
@@ -462,6 +466,9 @@ async def test_catch_up_delegates_to_notification_handler(bot):
 @pytest.mark.asyncio
 async def test_catch_up_passes_valid_lookback_to_notification_handler(bot):
     ctx = AsyncMock()
+    notification_channel = _channel(1, "bank-notifications")
+    bot.notification_handler.channel = notification_channel
+    ctx.channel = notification_channel
     now = datetime(2026, 8, 2, 15, 30, tzinfo=UTC)
     with (
         patch.object(bot_module.discord.utils, "utcnow", return_value=now),
@@ -479,6 +486,9 @@ async def test_catch_up_passes_valid_lookback_to_notification_handler(bot):
 @pytest.mark.asyncio
 async def test_catch_up_rejects_invalid_lookback_without_processing(bot):
     ctx = AsyncMock()
+    notification_channel = _channel(1, "bank-notifications")
+    bot.notification_handler.channel = notification_channel
+    ctx.channel = notification_channel
     with patch.object(
         bot.notification_handler, "catch_up", new=AsyncMock()
     ) as catch_up:
@@ -488,6 +498,61 @@ async def test_catch_up_rejects_invalid_lookback_without_processing(bot):
 
     ctx.send.assert_awaited_once_with(CATCH_UP_TIME_DELTA_ERROR)
     catch_up.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_catch_up_rejects_an_unwatched_channel(bot):
+    ctx = AsyncMock()
+    bot.notification_handler.channel = _channel(1, "bank-notifications")
+    ctx.channel = _channel(2, "paragony")
+
+    with patch.object(
+        bot.notification_handler, "catch_up", new=AsyncMock()
+    ) as catch_up:
+        command = bot.get_command("catch_up")
+        assert command is not None
+        await command.callback(ctx)
+
+    ctx.send.assert_awaited_once_with(CATCH_UP_CHANNEL_ERROR)
+    catch_up.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_catch_up_delegates_to_receipt_handler_in_its_channel(bot):
+    receipt_handler = ReceiptChannelHandler("paragony", MagicMock(), MagicMock())
+    bot = ActualDiscordBot(bot.notification_handler, receipt_handler)
+    ctx = AsyncMock()
+    receipt_channel = _channel(2, "paragony")
+    receipt_handler.channel = receipt_channel
+    ctx.channel = receipt_channel
+
+    with patch.object(receipt_handler, "catch_up", new=AsyncMock()) as catch_up:
+        command = bot.get_command("catch_up")
+        assert command is not None
+        await command.callback(ctx)
+
+    catch_up.assert_awaited_once_with(ctx)
+
+
+@pytest.mark.asyncio
+async def test_catch_up_delegates_to_bank_import_handler_in_its_channel(bot):
+    bank_import_handler = BankImportChannelHandler(
+        "bank-imports", MagicMock(), ZoneInfo("Europe/Warsaw")
+    )
+    bot = ActualDiscordBot(
+        bot.notification_handler, bank_import_handler=bank_import_handler
+    )
+    ctx = AsyncMock()
+    bank_import_channel = _channel(2, "bank-imports")
+    bank_import_handler.channel = bank_import_channel
+    ctx.channel = bank_import_channel
+
+    with patch.object(bank_import_handler, "catch_up", new=AsyncMock()) as catch_up:
+        command = bot.get_command("catch_up")
+        assert command is not None
+        await command.callback(ctx)
+
+    catch_up.assert_awaited_once_with(ctx)
 
 
 @pytest.mark.asyncio

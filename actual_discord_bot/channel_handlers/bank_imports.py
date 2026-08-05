@@ -42,6 +42,7 @@ I will select an unambiguous open Actual account automatically, or ask the uploa
 
 **Commands**
 `!help` — show this guide
+`!catch_up [X hour(s)|X day(s)|X month(s)]` — reprocess bank-statement messages in this channel
 `!clear_channel` — permanently delete all deletable messages in this watched channel. Requires your Manage Messages permission."""
 
 

@@ -4,8 +4,10 @@ import logging
 import traceback
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
+from datetime import datetime
 
 import discord
+from discord.ext import commands
 
 LOGGER = logging.getLogger(__name__)
 SUCCESS_REACTION = "✅"
@@ -72,6 +74,29 @@ class BaseChannelHandler(ABC):
             if message.author == bot_user and message.content == self.help_message:
                 return True
         return False
+
+    async def catch_up(
+        self, ctx: commands.Context, *, after: datetime | None = None
+    ) -> None:
+        """Reprocess eligible, non-bot messages from this handler's channel history."""
+        if self.channel is None:
+            await ctx.send(f"Error: Channel '{self.channel_name}' not found.")
+            return
+
+        processed_count = 0
+        async with ctx.typing():
+            history = (
+                self.channel.history(limit=None, after=after)
+                if after is not None
+                else self.channel.history(limit=None)
+            )
+            async for message in history:
+                if message.author == ctx.bot.user or not self.accepts(message):
+                    continue
+                await self.handle(message)
+                processed_count += 1
+
+        await ctx.send(f"Catch-up complete. Processed {processed_count} messages.")
 
     @abstractmethod
     def accepts(self, message: discord.Message) -> bool:

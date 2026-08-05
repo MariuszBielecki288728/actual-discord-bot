@@ -147,6 +147,31 @@ async def test_catch_up_skips_bot_status_reactions_and_retries_unmarked_messages
 
 
 @pytest.mark.asyncio
+async def test_catch_up_skips_messages_authored_by_the_bot(handler):
+    channel = AsyncMock(spec=discord.TextChannel)
+    handler.channel = channel
+    bot_user = MagicMock()
+    bot_message = AsyncMock(spec=discord.Message)
+    bot_message.author = bot_user
+    bot_message.reactions = []
+    notification = AsyncMock(spec=discord.Message)
+    notification.author = MagicMock()
+    notification.reactions = []
+    channel.history.return_value.__aiter__.return_value = [bot_message, notification]
+    ctx = MagicMock()
+    ctx.bot.user = bot_user
+    ctx.send = AsyncMock()
+    ctx.typing.return_value.__aenter__ = AsyncMock(return_value=None)
+    ctx.typing.return_value.__aexit__ = AsyncMock(return_value=None)
+    handler.handle = AsyncMock()
+
+    await handler.catch_up(ctx)
+
+    handler.handle.assert_awaited_once_with(notification)
+    ctx.send.assert_awaited_once_with("Catch-up complete. Processed 1 messages.")
+
+
+@pytest.mark.asyncio
 async def test_catch_up_retries_user_marked_messages_and_removes_the_marker(handler):
     channel = AsyncMock(spec=discord.TextChannel)
     handler.channel = channel
