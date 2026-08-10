@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from actual_discord_bot.bank_notifications import PekaoNotification
+from actual_discord_bot.bank_notifications import PekaoNotification, RevolutNotification
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
 
 
@@ -181,3 +181,23 @@ def test_forwarded_timestamp_uses_the_configured_timezone():
     )
 
     assert transaction.date == date(2024, 9, 23)
+
+
+def test_revolut_payment_ignores_the_balance_in_a_multiline_notification():
+    notification = RevolutNotification.from_message(
+        "Title: Chatgpt 🛍\n"
+        "Text: Zapłacono 34,99 zł w: Chatgpt.\n"
+        "⚠️ Saldo konta „PLN”: 99,08 zł.\n"
+        "Bank: Revolut"
+    )
+
+    transaction = notification.to_transaction(
+        timezone=ZoneInfo("Europe/Warsaw"), fallback_date=date(2026, 8, 10)
+    )
+
+    assert transaction == ActualTransactionData(
+        date=date(2026, 8, 10),
+        account="Revolut",
+        amount=Decimal("-34.99"),
+        imported_payee="Chatgpt",
+    )

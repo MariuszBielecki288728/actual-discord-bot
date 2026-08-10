@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -15,7 +16,7 @@ from actual_discord_bot.actual_connector import (
     ActualScheduleData,
     ScheduleCreationStatus,
 )
-from actual_discord_bot.bank_notifications import PekaoNotification
+from actual_discord_bot.bank_notifications import PekaoNotification, RevolutNotification
 from actual_discord_bot.bank_notifications.base_notification import BaseNotification
 from actual_discord_bot.channel_handlers.base import (
     SUCCESS_REACTION,
@@ -29,10 +30,12 @@ from actual_discord_bot.schedules import ScheduleRecurrence
 LOGGER = logging.getLogger(__name__)
 ERROR_REACTION = "❌"
 DEFAULT_NOTIFICATION_TIMEZONE = ZoneInfo("Europe/Warsaw")
+FORWARDED_BANK_REGEX = re.compile(r"^Bank: (?P<bank>[^\n]+)$", re.MULTILINE)
+NOTIFICATION_TYPES = (PekaoNotification, RevolutNotification)
 
 NOTIFICATION_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget notification assistant.**
 
-I watch this channel for bank notifications and turn them into transactions in Actual Budget. Currently I understand Bank Pekao card payments, incoming and outgoing transfers, and phone top-ups forwarded in this format:
+I watch this channel for bank notifications and turn them into transactions in Actual Budget. Currently I understand Bank Pekao card payments, incoming and outgoing transfers, and phone top-ups, plus Revolut card payments, forwarded in this format:
 ```
 Title: <notification title>
 Text: <notification text>
@@ -126,7 +129,9 @@ class NotificationChannelHandler(BaseChannelHandler):
         self, message: discord.Message
     ) -> ActualTransactionData:
         """Apply one source-date policy to imports and schedule creation."""
-        notification = self.notification_type.from_message(message.content)
+        notification = self._notification_type_for_message(
+            message.content
+        ).from_message(message.content)
         created_at = message.created_at
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=UTC)
@@ -135,6 +140,16 @@ class NotificationChannelHandler(BaseChannelHandler):
             timezone=self.timezone,
             fallback_date=fallback_date,
         )
+
+    def _notification_type_for_message(self, message: str) -> type[BaseNotification]:
+        """Select the bank parser named by the forwarded notification envelope."""
+        if matched := FORWARDED_BANK_REGEX.search(message):
+            bank = matched["bank"].strip().casefold()
+            for notification_type in NOTIFICATION_TYPES:
+                if notification_type.bank.casefold() == bank:
+                    return notification_type
+            raise ParseNotificationError(message)
+        return self.notification_type
 
     async def make_schedule(
         self, ctx: commands.Context, recurrence: ScheduleRecurrence

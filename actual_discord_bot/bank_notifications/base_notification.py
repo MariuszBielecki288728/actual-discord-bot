@@ -31,9 +31,15 @@ class BaseNotification:
 
     _message_regexes: ClassVar[tuple[re.Pattern[str], ...]] = (
         re.compile(
-            r"Title: (?P<title>.+)\nText: (?P<text>.+)\nTimestamp: (?P<timestamp>.+)"
+            r"^Title: (?P<title>[^\n]+)\nText: (?P<text>.+)\nTimestamp: "
+            r"(?P<timestamp>[^\n]+)$",
+            re.DOTALL,
         ),
-        re.compile(r"Title: (?P<title>.+)\nText: (?P<text>.+)\nBank: (?P<bank>.+)"),
+        re.compile(
+            r"^Title: (?P<title>[^\n]+)\nText: (?P<text>.+)\nBank: "
+            r"(?P<bank>[^\n]+)$",
+            re.DOTALL,
+        ),
     )
     _notification_regexes: ClassVar[Sequence[NotificationTemplate]]
 
