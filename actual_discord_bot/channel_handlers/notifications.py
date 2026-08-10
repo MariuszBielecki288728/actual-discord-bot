@@ -236,21 +236,18 @@ class NotificationChannelHandler(BaseChannelHandler):
             )
             return None
 
-        resolved = reference.resolved
-        if resolved is not None and not isinstance(
-            resolved, discord.DeletedReferencedMessage
-        ):
-            source_message = resolved
-        else:
-            try:
-                source_message = await self.channel.fetch_message(reference.message_id)  # type: ignore[union-attr]
-            except (discord.Forbidden, discord.HTTPException, discord.NotFound):
-                LOGGER.warning(
-                    "Could not fetch schedule source notification %s",
-                    reference.message_id,
-                )
-                await ctx.reply("Error: The replied-to notification is unavailable.")
-                return None
+        # The gateway's embedded referenced message can be partial and omit its
+        # reactions. Fetch the source so the success-reaction check below uses
+        # the current, complete message rather than a stale reply payload.
+        try:
+            source_message = await self.channel.fetch_message(reference.message_id)  # type: ignore[union-attr]
+        except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+            LOGGER.warning(
+                "Could not fetch schedule source notification %s",
+                reference.message_id,
+            )
+            await ctx.reply("Error: The replied-to notification is unavailable.")
+            return None
         if not _same_channel(source_message.channel, self.channel):
             await ctx.reply(
                 "Error: Reply to a notification in this bank notification channel."

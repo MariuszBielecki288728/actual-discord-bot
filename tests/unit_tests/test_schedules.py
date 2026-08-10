@@ -149,8 +149,11 @@ def _message(channel):
 @pytest.mark.asyncio
 async def test_make_schedule_uses_reply_target_and_reports_created_schedule():
     channel = MagicMock(id=10)
+    resolved_source = _message(channel)
+    resolved_source.reactions = []
     source = _message(channel)
-    reference = MagicMock(message_id=101, channel_id=10, resolved=source)
+    channel.fetch_message = AsyncMock(return_value=source)
+    reference = MagicMock(message_id=101, channel_id=10, resolved=resolved_source)
     ctx = MagicMock()
     ctx.channel = channel
     ctx.message.reference = reference
@@ -174,6 +177,7 @@ async def test_make_schedule_uses_reply_target_and_reports_created_schedule():
             handler_ctx := ctx, ScheduleRecurrence(2, RecurrenceFrequency.MONTHLY)
         )
 
+    channel.fetch_message.assert_awaited_once_with(101)
     connector.create_schedule.assert_called_once_with(
         ActualScheduleData(
             start=date(2024, 9, 23),
@@ -256,6 +260,7 @@ async def test_make_schedule_rejects_invalid_reply_states(
 async def test_make_schedule_translates_missing_actual_sources():
     channel = MagicMock(id=10)
     source = _message(channel)
+    channel.fetch_message = AsyncMock(return_value=source)
     ctx = MagicMock(channel=channel, reply=AsyncMock())
     ctx.message.reference = MagicMock(message_id=101, channel_id=10, resolved=source)
     connector = MagicMock()
@@ -280,6 +285,7 @@ async def test_make_schedule_translates_missing_actual_sources():
 async def test_make_schedule_includes_a_markdown_traceback_for_unexpected_errors():
     channel = MagicMock(id=10)
     source = _message(channel)
+    channel.fetch_message = AsyncMock(return_value=source)
     ctx = MagicMock(channel=channel, reply=AsyncMock())
     ctx.message.reference = MagicMock(message_id=101, channel_id=10, resolved=source)
     connector = MagicMock()
