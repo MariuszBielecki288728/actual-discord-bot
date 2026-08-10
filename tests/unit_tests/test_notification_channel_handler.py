@@ -64,6 +64,33 @@ async def test_parse_error_is_marked_and_explained(handler):
 
 
 @pytest.mark.asyncio
+async def test_handler_selects_the_revolut_parser_from_the_forwarded_bank():
+    handler = NotificationChannelHandler("bank", MagicMock())
+    handler.actual_connector.config.file = "Household"
+    message = AsyncMock(spec=discord.Message)
+    message.id = 1
+    message.content = (
+        "Title: Chatgpt 🛍\n"
+        "Text: Zapłacono 34,99 zł w: Chatgpt.\n"
+        "⚠️ Saldo konta „PLN”: 99,08 zł.\n"
+        "Bank: Revolut"
+    )
+    message.created_at = datetime(2026, 8, 10, tzinfo=UTC)
+
+    result = await handler.handle(message)
+
+    assert result is MessageHandlingResult.IMPORTED
+    handler.actual_connector.save_transaction.assert_called_once_with(
+        ActualTransactionData(
+            date=date(2026, 8, 10),
+            account="Revolut",
+            amount=Decimal("-34.99"),
+            imported_payee="Chatgpt",
+        )
+    )
+
+
+@pytest.mark.asyncio
 async def test_unexpected_error_includes_a_markdown_traceback_by_default(handler):
     message = AsyncMock(spec=discord.Message)
     message.id = 1
@@ -122,7 +149,9 @@ def test_unexpected_error_escapes_markdown_fences_in_the_traceback():
 
 
 @pytest.mark.asyncio
-async def test_catch_up_skips_bot_status_reactions_and_retries_unmarked_messages(handler):
+async def test_catch_up_skips_bot_status_reactions_and_retries_unmarked_messages(
+    handler,
+):
     channel = AsyncMock(spec=discord.TextChannel)
     handler.channel = channel
     already_imported = AsyncMock(spec=discord.Message)
