@@ -114,7 +114,7 @@ async def test_setup_hook_starts_hot_reload_when_source_tree_exists(
 
 
 def test_registers_commands_without_self_parameter(bot):
-    for name in ("catch_up", "clear_channel", "help", "make_schedule"):
+    for name in ("catch_up", "clear_channel", "help", "make_schedule", "transfer"):
         command = bot.get_command(name)
         assert command is not None
         assert "self" not in command.params
@@ -125,6 +125,9 @@ def test_registers_commands_without_self_parameter(bot):
     make_schedule = bot.get_command("make_schedule")
     assert make_schedule is not None
     assert "time_delta" in make_schedule.params
+    transfer = bot.get_command("transfer")
+    assert transfer is not None
+    assert "account_name" in transfer.params
 
 
 @pytest.mark.asyncio
@@ -311,7 +314,9 @@ async def test_delete_channel_history_reports_non_deletable_messages_as_incomple
 
 
 @pytest.mark.asyncio
-async def test_delete_channel_history_reports_successful_deletions_before_an_api_error(bot):
+async def test_delete_channel_history_reports_successful_deletions_before_an_api_error(
+    bot,
+):
     now = datetime(2026, 8, 2, 15, 30, tzinfo=UTC)
     channel = _channel(1, "bank-notifications")
     old_message = _message(1, now - BULK_DELETE_SAFE_AGE - timedelta(days=1))
@@ -586,6 +591,19 @@ async def test_make_schedule_rejects_invalid_recurrence_without_delegating(bot):
         "Error: Invalid recurrence. Use X day(s), X week(s), X month(s), or X year(s)."
     )
     make_schedule.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_transfer_delegates_the_optional_destination_account(bot):
+    ctx = AsyncMock()
+    with patch.object(
+        bot.notification_handler, "make_transfer", new=AsyncMock()
+    ) as make_transfer:
+        command = bot.get_command("transfer")
+        assert command is not None
+        await command.callback(ctx, account_name="Revolut")
+
+    make_transfer.assert_awaited_once_with(ctx, "Revolut")
 
 
 @pytest.mark.parametrize(

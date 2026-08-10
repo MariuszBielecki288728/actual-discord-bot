@@ -4,7 +4,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from actual_discord_bot.actual_connector import ActualConnector
+from actual_discord_bot.actual_connector import (
+    ActualConnector,
+    TransferCreationStatus,
+)
 from actual_discord_bot.config import ActualConfig
 from actual_discord_bot.dataclasses_definitions import ActualTransactionData
 from actual_discord_bot.receipts.models import ParsedReceipt, ReceiptItem
@@ -76,6 +79,7 @@ class TestBankNotificationDeduplication:
             account="Pekao",
             amount=Decimal("-23.48"),
             imported_payee="Kaufland",
+            notes="",
         )
 
         with patch(
@@ -103,6 +107,7 @@ class TestBankNotificationDeduplication:
             account="Pekao",
             amount=Decimal("-23.48"),
             imported_payee="Kaufland",
+            notes="",
         )
 
         with patch(
@@ -121,6 +126,7 @@ class TestBankNotificationDeduplication:
             account="Pekao",
             amount=Decimal("-23.48"),
             imported_payee="Kaufland",
+            notes="",
         )
 
     def test_dedup_uses_signed_expense_amount(self, connector, mock_actual_manager):
@@ -209,6 +215,86 @@ class TestBankNotificationDeduplication:
         ):
             connector.save_transaction(transaction_data)
 
+        mock_actual_manager.commit.assert_not_called()
+
+
+class TestNotificationTransfers:
+    def test_replaces_the_imported_transaction_with_a_linked_transfer(
+        self, connector, mock_actual_manager
+    ):
+        source_account = MagicMock(id="pekao")
+        destination_account = MagicMock(id="revolut")
+        imported_transaction = MagicMock(notes="Discord notification: 9")
+        transaction_data = ActualTransactionData(
+            date=date(2026, 8, 2),
+            account="Pekao",
+            amount=Decimal("-12.34"),
+            notes="Discord notification: 9",
+        )
+
+        with (
+            patch(
+                "actual_discord_bot.actual_connector._find_open_account",
+                side_effect=(source_account, destination_account),
+            ),
+            patch(
+                "actual_discord_bot.actual_connector.get_transactions",
+                return_value=(imported_transaction,),
+            ) as get_transactions,
+            patch(
+                "actual_discord_bot.actual_connector.create_transfer"
+            ) as create_transfer,
+        ):
+            status = connector.create_transfer_from_notification(
+                transaction_data, 9, "Revolut"
+            )
+
+        assert status is TransferCreationStatus.CREATED
+        get_transactions.assert_called_once_with(
+            mock_actual_manager.session, account=source_account
+        )
+        create_transfer.assert_called_once_with(
+            mock_actual_manager.session,
+            date=date(2026, 8, 2),
+            source_account=source_account,
+            dest_account=destination_account,
+            amount=Decimal("12.34"),
+            notes="Discord notification: 9",
+        )
+        imported_transaction.delete.assert_called_once_with()
+        mock_actual_manager.commit.assert_called_once_with()
+
+    def test_repeated_command_does_not_create_a_second_transfer(
+        self, connector, mock_actual_manager
+    ):
+        source_account = MagicMock(id="pekao")
+        destination_account = MagicMock(id="revolut")
+        transfer_transaction = MagicMock(notes="Discord notification: 9")
+        transaction_data = ActualTransactionData(
+            date=date(2026, 8, 2),
+            account="Pekao",
+            amount=Decimal("-12.34"),
+        )
+
+        with (
+            patch(
+                "actual_discord_bot.actual_connector._find_open_account",
+                side_effect=(source_account, destination_account),
+            ),
+            patch(
+                "actual_discord_bot.actual_connector.get_transactions",
+                side_effect=((), (transfer_transaction,)),
+            ),
+            patch(
+                "actual_discord_bot.actual_connector.create_transfer"
+            ) as create_transfer,
+        ):
+            status = connector.create_transfer_from_notification(
+                transaction_data, 9, "Revolut"
+            )
+
+        assert status is TransferCreationStatus.ALREADY_EXISTS
+        create_transfer.assert_not_called()
         mock_actual_manager.commit.assert_not_called()
 
 

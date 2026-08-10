@@ -13,6 +13,7 @@ from actual.queries import (
 from actual.queries import (
     create_schedule_config,
     create_transaction,
+    create_transfer,
     get_account,
     get_payee,
     get_schedules,
@@ -26,7 +27,10 @@ from actual_discord_bot.bank_imports.models import (
     ImportableActualAccount,
 )
 from actual_discord_bot.config import ActualConfig
-from actual_discord_bot.dataclasses_definitions import ActualTransactionData
+from actual_discord_bot.dataclasses_definitions import (
+    ActualTransactionData,
+    notification_transaction_note,
+)
 from actual_discord_bot.errors import ScheduleSourceNotFound
 from actual_discord_bot.receipts.models import ParsedReceipt
 from actual_discord_bot.receipts.transaction import (
@@ -42,6 +46,17 @@ class ScheduleCreationStatus(StrEnum):
 
     CREATED = "created"
     ALREADY_EXISTS = "already_exists"
+
+
+class TransferCreationStatus(StrEnum):
+    """The outcome of making an imported notification into a transfer."""
+
+    CREATED = "created"
+    ALREADY_EXISTS = "already_exists"
+
+
+class NotificationTransactionNotFoundError(LookupError):
+    """Raised when an imported notification cannot be found in Actual."""
 
 
 @dataclass(frozen=True)
@@ -94,11 +109,70 @@ class ActualConnector:
                 account=transaction_data.account,
                 amount=transaction_data.amount,
                 imported_payee=transaction_data.imported_payee,
+                notes=transaction_data.notes,
             )
             actual.commit()
             actual.session.refresh(transaction)
             actual.session.expunge(transaction)
             return transaction
+
+    def create_transfer_from_notification(
+        self,
+        transaction_data: ActualTransactionData,
+        message_id: int,
+        destination_account_name: str,
+    ) -> TransferCreationStatus:
+        """Replace one imported notification row with Actual's linked transfer rows."""
+        note = notification_transaction_note(message_id)
+        with self._create_actual_manager() as actual:
+            source_account = _find_open_account(actual, transaction_data.account)
+            destination_account = _find_open_account(actual, destination_account_name)
+            if source_account is None or destination_account is None:
+                msg = "The selected Actual account is no longer open"
+                raise ValueError(msg)
+            if source_account.id == destination_account.id:
+                msg = "A transfer requires two different Actual accounts"
+                raise ValueError(msg)
+
+            source_transaction = next(
+                (
+                    transaction
+                    for transaction in get_transactions(
+                        actual.session, account=source_account
+                    )
+                    if transaction.notes == note
+                ),
+                None,
+            )
+            if source_transaction is None:
+                if any(
+                    transaction.notes == note
+                    for transaction in get_transactions(
+                        actual.session, notes=note, transfer=True
+                    )
+                ):
+                    return TransferCreationStatus.ALREADY_EXISTS
+                raise NotificationTransactionNotFoundError
+
+            amount = Decimal(str(transaction_data.amount))
+            if amount == 0:
+                msg = "A zero-value transaction cannot be made into a transfer"
+                raise ValueError(msg)
+            if amount < 0:
+                source, destination = source_account, destination_account
+            else:
+                source, destination = destination_account, source_account
+            create_transfer(
+                actual.session,
+                date=transaction_data.date,
+                source_account=source,
+                dest_account=destination,
+                amount=abs(amount),
+                notes=note,
+            )
+            source_transaction.delete()
+            actual.commit()
+            return TransferCreationStatus.CREATED
 
     def save_receipt_transaction(
         self,
