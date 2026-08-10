@@ -3,16 +3,20 @@ import os
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from actual.queries import create_payee, get_schedules, get_transactions
+from actual.queries import create_account, create_payee, get_schedules, get_transactions
 
 from actual_discord_bot.actual_connector import (
     ActualConnector,
     ActualScheduleData,
     ScheduleCreationStatus,
+    TransferCreationStatus,
 )
 from actual_discord_bot.bank_imports.models import BankImportTransaction
 from actual_discord_bot.config import ActualConfig
-from actual_discord_bot.dataclasses_definitions import ActualTransactionData
+from actual_discord_bot.dataclasses_definitions import (
+    ActualTransactionData,
+    notification_transaction_note,
+)
 from actual_discord_bot.schedules import RecurrenceFrequency, ScheduleRecurrence
 
 ACTUAL_TEST_URL = os.environ.get("ACTUAL_TEST_URL", "http://localhost:12013")
@@ -63,6 +67,40 @@ def test_bank_csv_import_is_idempotent_and_creates_a_cleared_transaction(actual)
     assert imported.cleared == 1
     assert imported.notes == "Synthetic bank statement row"
     assert imported.financial_id.startswith("bank2ynab:")
+
+
+def test_notification_transaction_can_be_replaced_with_an_actual_transfer(actual):
+    create_account(actual.session, "TransferDestination")
+    actual.commit()
+    connector = ActualConnector(
+        ActualConfig(url=ACTUAL_TEST_URL, password="test", file="TestBudget"),
+    )
+    source_data = ActualTransactionData(
+        date=date(2026, 8, 2),
+        account="TestAccount",
+        amount=Decimal("-12.34"),
+        imported_payee="Revolut",
+        notes=notification_transaction_note(9),
+    )
+    connector.save_transaction(source_data)
+
+    status = connector.create_transfer_from_notification(
+        source_data, 9, "TransferDestination"
+    )
+
+    assert status is TransferCreationStatus.CREATED
+    source_transfers = get_transactions(
+        actual.session, account="TestAccount", transfer=True
+    )
+    destination_transfers = get_transactions(
+        actual.session, account="TransferDestination", transfer=True
+    )
+    assert len(source_transfers) == 1
+    assert len(destination_transfers) == 1
+    assert source_transfers[0].get_amount() == Decimal("-12.34")
+    assert destination_transfers[0].get_amount() == Decimal("12.34")
+    assert source_transfers[0].transferred_id == destination_transfers[0].id
+    assert destination_transfers[0].transferred_id == source_transfers[0].id
 
 
 def test_schedule_creation_is_manual_and_idempotent(actual):

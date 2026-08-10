@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import re
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -14,7 +15,9 @@ from discord.ext import commands
 from actual_discord_bot.actual_connector import (
     ActualConnector,
     ActualScheduleData,
+    NotificationTransactionNotFoundError,
     ScheduleCreationStatus,
+    TransferCreationStatus,
 )
 from actual_discord_bot.bank_notifications import PekaoNotification, RevolutNotification
 from actual_discord_bot.bank_notifications.base_notification import BaseNotification
@@ -23,7 +26,10 @@ from actual_discord_bot.channel_handlers.base import (
     BaseChannelHandler,
     format_unexpected_error,
 )
-from actual_discord_bot.dataclasses_definitions import ActualTransactionData
+from actual_discord_bot.dataclasses_definitions import (
+    ActualTransactionData,
+    notification_transaction_note,
+)
 from actual_discord_bot.errors import ParseNotificationError, ScheduleSourceNotFound
 from actual_discord_bot.schedules import ScheduleRecurrence
 
@@ -32,6 +38,7 @@ ERROR_REACTION = "❌"
 DEFAULT_NOTIFICATION_TIMEZONE = ZoneInfo("Europe/Warsaw")
 FORWARDED_BANK_REGEX = re.compile(r"^Bank: (?P<bank>[^\n]+)$", re.MULTILINE)
 NOTIFICATION_TYPES = (PekaoNotification, RevolutNotification)
+TRANSFER_ACCOUNT_COUNT_FOR_DEFAULT = 2
 
 NOTIFICATION_HELP_MESSAGE = """👋 **Hello! I am your Actual Budget notification assistant.**
 
@@ -52,6 +59,7 @@ An administrator can create a Discord webhook for this channel in **Edit Channel
 `!help` — show this notification guide
 `!catch_up [X hour(s)|X day(s)|X month(s)]` — retry messages in this channel that do not already have my ✅
 `!make_schedule [X day(s)|X week(s)|X month(s)|X year(s)]` — reply to a notification I marked ✅ to create a manual-approval recurring schedule. It defaults to monthly.
+`!transfer [account name]` — reply to a notification I marked ✅ to replace it with an Actual transfer. When there are exactly two open accounts, the destination is selected automatically.
 `!clear_channel` — permanently delete all deletable messages in this watched channel. Requires your Manage Messages permission."""
 
 
@@ -136,9 +144,12 @@ class NotificationChannelHandler(BaseChannelHandler):
         if created_at.tzinfo is None:
             created_at = created_at.replace(tzinfo=UTC)
         fallback_date = created_at.astimezone(self.timezone).date()
-        return notification.to_transaction(
-            timezone=self.timezone,
-            fallback_date=fallback_date,
+        return replace(
+            notification.to_transaction(
+                timezone=self.timezone,
+                fallback_date=fallback_date,
+            ),
+            notes=notification_transaction_note(message.id),
         )
 
     def _notification_type_for_message(self, message: str) -> type[BaseNotification]:
@@ -233,6 +244,76 @@ class NotificationChannelHandler(BaseChannelHandler):
         LOGGER.info("Created schedule for notification message %s", source_message.id)
         await ctx.reply(_format_schedule_summary(schedule_data))
 
+    async def make_transfer(
+        self, ctx: commands.Context, destination_account_name: str = ""
+    ) -> None:
+        """Replace a successfully imported notification with an Actual transfer."""
+        if self.channel is None or not _same_channel(ctx.channel, self.channel):
+            await ctx.reply(
+                "Error: This command can only be used in the bank notification channel."
+            )
+            return
+
+        source_message = await self._referenced_notification(ctx)
+        if source_message is None:
+            return
+        if not _has_success_reaction(source_message):
+            await ctx.reply(
+                "Error: Reply to a notification that I imported successfully (✅)."
+            )
+            return
+
+        try:
+            transaction_data = self._transaction_data_from_message(source_message)
+        except ParseNotificationError:
+            await ctx.reply(
+                "Error: The replied-to message is not a supported bank notification."
+            )
+            return
+
+        destination = await self._transfer_destination(
+            ctx, transaction_data.account, destination_account_name
+        )
+        if destination is None:
+            return
+
+        try:
+            status = await self._save_transfer(
+                transaction_data, source_message.id, destination
+            )
+        except NotificationTransactionNotFoundError:
+            await ctx.reply(
+                "Error: The imported transaction could not be found in Actual. Nothing was changed."
+            )
+            return
+        except ValueError as error:
+            await ctx.reply(f"Error: {error}. Nothing was changed.")
+            return
+        except Exception as error:
+            LOGGER.exception(
+                "Transfer creation failed for notification message %s",
+                source_message.id,
+            )
+            await ctx.reply(
+                format_unexpected_error(
+                    "An unexpected error occurred while creating the transfer.",
+                    error,
+                    show_traceback=self.show_error_tracebacks,
+                )
+            )
+            return
+
+        source, destination_name = _transfer_accounts(transaction_data, destination)
+        if status is TransferCreationStatus.ALREADY_EXISTS:
+            await ctx.reply(
+                f"This notification is already a transfer: **{source}** → **{destination_name}**."
+            )
+            return
+        await ctx.reply(
+            f"Created transfer: **{source}** → **{destination_name}**\n"
+            f"{abs(transaction_data.amount)} PLN · {transaction_data.date.isoformat()}"
+        )
+
     async def _referenced_notification(
         self, ctx: commands.Context
     ) -> discord.Message | None:
@@ -280,6 +361,72 @@ class NotificationChannelHandler(BaseChannelHandler):
         async with self.actual_write_lock:
             return await asyncio.to_thread(
                 self.actual_connector.create_schedule, schedule_data
+            )
+
+    async def _transfer_destination(
+        self,
+        ctx: commands.Context,
+        source_account_name: str,
+        requested_account_name: str,
+    ) -> str | None:
+        accounts = await asyncio.to_thread(self.actual_connector.list_import_accounts)
+        account_names = tuple(account.name for account in accounts)
+        if source_account_name not in account_names:
+            await ctx.reply(
+                "Error: The notification's account is no longer open in Actual. Nothing was changed."
+            )
+            return None
+
+        requested = requested_account_name.strip()
+        if requested:
+            matched = next(
+                (
+                    name
+                    for name in account_names
+                    if name.casefold() == requested.casefold()
+                ),
+                None,
+            )
+            if matched is None:
+                available = ", ".join(f"**{name}**" for name in account_names)
+                await ctx.reply(
+                    f"Error: Account **{requested}** was not found. "
+                    f"Available accounts: {available}."
+                )
+                return None
+            if matched == source_account_name:
+                await ctx.reply(
+                    "Error: Choose an account different from the notification's account."
+                )
+                return None
+            return matched
+
+        if len(account_names) == TRANSFER_ACCOUNT_COUNT_FOR_DEFAULT:
+            return next(name for name in account_names if name != source_account_name)
+        await ctx.reply(
+            "Error: Specify the destination account, for example `!transfer Revolut`."
+        )
+        return None
+
+    async def _save_transfer(
+        self,
+        transaction_data: ActualTransactionData,
+        message_id: int,
+        destination_account_name: str,
+    ) -> TransferCreationStatus:
+        if self.actual_write_lock is None:
+            return await asyncio.to_thread(
+                self.actual_connector.create_transfer_from_notification,
+                transaction_data,
+                message_id,
+                destination_account_name,
+            )
+        async with self.actual_write_lock:
+            return await asyncio.to_thread(
+                self.actual_connector.create_transfer_from_notification,
+                transaction_data,
+                message_id,
+                destination_account_name,
             )
 
     async def catch_up(
@@ -350,6 +497,15 @@ def _format_transaction_summary(
         f"Budget: **{budget}** · Account: **{transaction_data.account}** · "
         "Category: *Uncategorized*"
     )
+
+
+def _transfer_accounts(
+    transaction_data: ActualTransactionData, destination_account_name: str
+) -> tuple[str, str]:
+    """Return the transfer direction based on the notification's signed amount."""
+    if transaction_data.amount < 0:
+        return transaction_data.account, destination_account_name
+    return destination_account_name, transaction_data.account
 
 
 def _same_channel(left: object, right: object) -> bool:

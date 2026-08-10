@@ -1,10 +1,12 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
 
+from actual_discord_bot.actual_connector import TransferCreationStatus
+from actual_discord_bot.bank_imports.models import ImportableActualAccount
 from actual_discord_bot.channel_handlers.base import format_unexpected_error
 from actual_discord_bot.channel_handlers.notifications import (
     ERROR_REACTION,
@@ -37,7 +39,13 @@ async def test_successful_notification_is_saved_in_a_worker_and_reacted(handler)
     result = await handler.handle(message)
     assert result is MessageHandlingResult.IMPORTED
     handler.actual_connector.save_transaction.assert_called_once_with(
-        notification.to_transaction.return_value
+        ActualTransactionData(
+            date=date(2026, 8, 2),
+            account="Pekao",
+            amount=Decimal("-12.34"),
+            imported_payee="Shop",
+            notes="Discord notification: 1",
+        )
     )
     message.add_reaction.assert_awaited_once_with("✅")
     message.reply.assert_awaited_once_with(
@@ -86,6 +94,7 @@ async def test_handler_selects_the_revolut_parser_from_the_forwarded_bank():
             account="Revolut",
             amount=Decimal("-34.99"),
             imported_payee="Chatgpt",
+            notes="Discord notification: 1",
         )
     )
 
@@ -240,3 +249,88 @@ async def test_catch_up_limits_channel_history_to_the_requested_time(handler):
     await handler.catch_up(ctx, after=after)
 
     channel.history.assert_called_once_with(limit=None, after=after)
+
+
+@pytest.mark.asyncio
+async def test_transfer_automatically_uses_the_other_account_when_there_are_two(
+    handler,
+):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    handler.channel = channel
+    source_message = AsyncMock(spec=discord.Message)
+    source_message.id = 9
+    source_message.channel = channel
+    source_message.reactions = [MagicMock(emoji="✅", me=True)]
+    channel.fetch_message.return_value = source_message
+    transaction_data = ActualTransactionData(
+        date=date(2026, 8, 2),
+        account="Pekao",
+        amount=Decimal("-12.34"),
+        imported_payee="Revolut",
+        notes="Discord notification: 9",
+    )
+    handler.actual_connector.list_import_accounts.return_value = (
+        ImportableActualAccount("Pekao", False),
+        ImportableActualAccount("Revolut", False),
+    )
+    handler.actual_connector.create_transfer_from_notification.return_value = (
+        TransferCreationStatus.CREATED
+    )
+    ctx = AsyncMock()
+    ctx.channel = channel
+    ctx.message.reference = MagicMock(message_id=9, channel_id=1)
+
+    with patch.object(
+        handler, "_transaction_data_from_message", return_value=transaction_data
+    ):
+        await handler.make_transfer(ctx)
+
+    handler.actual_connector.create_transfer_from_notification.assert_called_once_with(
+        transaction_data, 9, "Revolut"
+    )
+    ctx.reply.assert_awaited_once_with(
+        "Created transfer: **Pekao** → **Revolut**\n12.34 PLN · 2026-08-02"
+    )
+
+
+@pytest.mark.asyncio
+async def test_transfer_accepts_a_case_insensitive_account_name(handler):
+    channel = AsyncMock(spec=discord.TextChannel)
+    channel.id = 1
+    handler.channel = channel
+    source_message = AsyncMock(spec=discord.Message)
+    source_message.id = 9
+    source_message.channel = channel
+    source_message.reactions = [MagicMock(emoji="✅", me=True)]
+    channel.fetch_message.return_value = source_message
+    transaction_data = ActualTransactionData(
+        date=date(2026, 8, 2),
+        account="Pekao",
+        amount=Decimal("12.34"),
+        imported_payee="Transfer",
+        notes="Discord notification: 9",
+    )
+    handler.actual_connector.list_import_accounts.return_value = (
+        ImportableActualAccount("Pekao", False),
+        ImportableActualAccount("Revolut", False),
+        ImportableActualAccount("Savings", False),
+    )
+    handler.actual_connector.create_transfer_from_notification.return_value = (
+        TransferCreationStatus.CREATED
+    )
+    ctx = AsyncMock()
+    ctx.channel = channel
+    ctx.message.reference = MagicMock(message_id=9, channel_id=1)
+
+    with patch.object(
+        handler, "_transaction_data_from_message", return_value=transaction_data
+    ):
+        await handler.make_transfer(ctx, "revolut")
+
+    handler.actual_connector.create_transfer_from_notification.assert_called_once_with(
+        transaction_data, 9, "Revolut"
+    )
+    ctx.reply.assert_awaited_once_with(
+        "Created transfer: **Revolut** → **Pekao**\n12.34 PLN · 2026-08-02"
+    )

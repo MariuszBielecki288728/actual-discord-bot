@@ -94,10 +94,16 @@ class ActualDiscordBot(commands.Bot):
         ) -> None:
             await self._make_schedule(ctx, time_delta)
 
+        async def transfer_command(
+            ctx: commands.Context, *, account_name: str = ""
+        ) -> None:
+            await self.notification_handler.make_transfer(ctx, account_name)
+
         self.add_command(commands.Command(catch_up_command, name="catch_up"))
         self.add_command(commands.Command(clear_channel_command, name="clear_channel"))
         self.add_command(commands.Command(help_command, name="help"))
         self.add_command(commands.Command(make_schedule_command, name="make_schedule"))
+        self.add_command(commands.Command(transfer_command, name="transfer"))
         self.handlers: tuple[BaseChannelHandler, ...] = tuple(
             handler
             for handler in (bank_import_handler, receipt_handler, notification_handler)
@@ -183,7 +189,9 @@ class ActualDiscordBot(commands.Bot):
         if not isinstance(ctx.channel, discord.TextChannel) or not isinstance(
             ctx.author, discord.Member
         ):
-            await ctx.send("Error: This command can only be used in a server text channel.")
+            await ctx.send(
+                "Error: This command can only be used in a server text channel."
+            )
             return
 
         if not ctx.channel.permissions_for(ctx.author).manage_messages:

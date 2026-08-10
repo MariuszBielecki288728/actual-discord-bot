@@ -11,3 +11,8 @@ class ActualTransactionData:
 
     imported_payee: str | None = None
     notes: str = ""
+
+
+def notification_transaction_note(message_id: int) -> str:
+    """Return the stable Actual note used to find a Discord notification later."""
+    return f"Discord notification: {message_id}"
