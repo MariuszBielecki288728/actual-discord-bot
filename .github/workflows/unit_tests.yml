@@ -50,7 +50,7 @@ jobs:
         done
 
     - name: Install Poetry
-      uses: Gr1N/setup-poetry@v9
+      uses: Gr1N/setup-poetry@v10
 
     - name: Install library and dependencies
       run: |
